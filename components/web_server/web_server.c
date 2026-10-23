@@ -3,11 +3,41 @@
 #include "lua_engine.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <dirent.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 
 static const char *TAG = "WEB_SERVER";
+
+// ============================================================================
+// Структура для передачи параметров в задачу выполнения скрипта
+// ============================================================================
+typedef struct {
+    char file_path[256];
+} script_task_params_t;
+
+// ============================================================================
+// Задача для выполнения Lua-скрипта в фоне
+// ============================================================================
+static void lua_script_task(void *pvParameters) {
+    script_task_params_t *params = (script_task_params_t *)pvParameters;
+    
+    ESP_LOGI(TAG, "Executing script in separate task: %s", params->file_path);
+    
+    // Выполняем скрипт
+    lua_engine_execute_file(params->file_path);
+    
+    ESP_LOGI(TAG, "Script task finished: %s", params->file_path);
+    
+    // Освобождаем память
+    free(params);
+    
+    // Удаляем задачу после завершения
+    vTaskDelete(NULL);
+}
 
 // ============================================================================
 // Обработчик для раздачи статических файлов из SPIFFS
@@ -100,7 +130,7 @@ static esp_err_t api_scripts_handler(httpd_req_t *req) {
     // Заканчиваем JSON-массив
     offset += snprintf(response + offset, sizeof(response) - offset, "]");
     
-    // ОТПРАВЛЯЕМ ВСЁ ОДНОЙ КОМАНДОЙ (это решает проблему ERR_INVALID_CHUNKED_ENCODING)
+    // ОТПРАВЛЯЕМ ВСЁ ОДНОЙ КОМАНДОЙ (решает проблему ERR_INVALID_CHUNKED_ENCODING)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, response, offset);
     
@@ -108,7 +138,7 @@ static esp_err_t api_scripts_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
-// Обработчик API: запуск Lua-скрипта
+// Обработчик API: запуск Lua-скрипта (в отдельной задаче)
 // ============================================================================
 static esp_err_t api_run_handler(httpd_req_t *req) {
     char query[256];
@@ -142,19 +172,40 @@ static esp_err_t api_run_handler(httpd_req_t *req) {
     char full_path[256];
     snprintf(full_path, sizeof(full_path), "/scripts/%s", file_val);
     
-    ESP_LOGI(TAG, "Executing script: %s", full_path);
+    ESP_LOGI(TAG, "Starting script task: %s", full_path);
     
-    // Вызываем Lua-движок
-    esp_err_t ret = lua_engine_execute_file(full_path);
-    
-    httpd_resp_set_type(req, "application/json");
-    
-    if (ret == ESP_OK) {
-        httpd_resp_sendstr(req, "{\"status\":\"success\",\"message\":\"Script executed successfully\"}");
-    } else {
+    // Создаём параметры для задачи (выделяем в куче, т.к. задача живёт дольше этой функции)
+    script_task_params_t *params = malloc(sizeof(script_task_params_t));
+    if (params == NULL) {
         httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Failed to execute script\"}");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Failed to allocate memory\"}");
+        return ESP_OK;
     }
+    strcpy(params->file_path, full_path);
+    
+    // Создаём задачу для выполнения скрипта (8 КБ стека, приоритет 5)
+    BaseType_t ret = xTaskCreate(
+        lua_script_task,     // функция задачи
+        "lua_script",        // имя задачи (для отладки)
+        8192,                // размер стека (8 КБ)
+        params,              // параметры
+        5,                   // приоритет
+        NULL                 // хендл задачи не нужен
+    );
+    
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create script task");
+        free(params);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Failed to create task\"}");
+        return ESP_OK;
+    }
+    
+    // Сразу возвращаем ответ браузеру (не ждём завершения скрипта)
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"success\",\"message\":\"Script started in background\"}");
     
     return ESP_OK;
 }
@@ -165,7 +216,10 @@ static esp_err_t api_run_handler(httpd_req_t *req) {
 esp_err_t web_server_start(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 10;
-    config.stack_size = 8192; 
+    
+    // Увеличиваем стек задачи веб-сервера до 8 КБ
+    config.stack_size = 8192;
+    
     httpd_handle_t server = NULL;
     
     if (httpd_start(&server, &config) != ESP_OK) {

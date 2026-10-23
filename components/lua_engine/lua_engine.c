@@ -6,9 +6,19 @@
 #include <lualib.h>
 #include <string.h>
 #include "mcp23017.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "lauxlib.h"
 
 static const char* TAG = "LUA_ENGINE";
 static lua_State* L = NULL;
+
+ // Функция задержки для Lua: delay(мс)
+   static int l_delay(lua_State *L) {
+       int ms = luaL_checkinteger(L, 1);
+       vTaskDelay(pdMS_TO_TICKS(ms));
+       return 0;
+   }
 
 esp_err_t lua_engine_init(void) {
     L = luaL_newstate();
@@ -18,6 +28,10 @@ esp_err_t lua_engine_init(void) {
     }
     
     luaL_openlibs(L);
+
+    // Регистрируем функцию delay для Lua
+   lua_pushcfunction(L, l_delay);
+   lua_setglobal(L, "delay");
 
     ESP_LOGI(TAG, "Lua engine initialized");
     mcp23017_register_lua(L);
