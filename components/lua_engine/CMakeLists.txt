@@ -1,0 +1,7 @@
+idf_component_register(
+    SRCS "lua_engine.c"
+    INCLUDE_DIRS "include"
+    REQUIRES 
+        filesystem
+        lua
+)

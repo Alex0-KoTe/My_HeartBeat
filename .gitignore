@@ -1,0 +1,48 @@
+# ==========================================
+# ESP-IDF Build Artifacts (НЕ коммитим!)
+# ==========================================
+build/
+managed_components/
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+dependencies.lock.bak
+
+# ==========================================
+# Python & Virtual Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# ==========================================
+# IDE & OS Junk
+# ==========================================
+.vscode/*.code-workspace
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Temporary files
+# ==========================================
+*.log
+*.tmp
+*.temp
+# ==========================================
+# VS Code Settings (Личные настройки и абсолютные пути)
+# ==========================================
+# Игнорируем файлы, где чаще всего прописываются абсолютные пути твоего ПК
+.vscode/settings.json
+.vscode/launch.json
+
+# Если ты хочешь делиться настройками IntelliSense с другими (и там используются 
+# только относительные пути вроде ${workspaceFolder}), раскомментируй строку ниже:
+# !.vscode/c_cpp_properties.json

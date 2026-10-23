@@ -1,0 +1,29 @@
+{
+    "configurations": [
+        {
+            "name": "ESP-IDF",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/esp/v6.1/esp-idf/components/**",
+                "C:/esp/v6.1/esp-idf/components/driver/**",
+                "C:/esp/v6.1/esp-idf/components/esp_driver_gpio/**",
+                "C:/esp/v6.1/esp-idf/components/esp_http_server/**",
+                "C:/esp/v6.1/esp-idf/components/esp_spiffs/**",
+                "C:/esp/v6.1/esp-idf/components/freertos/**",
+                "C:/esp/v6.1/esp-idf/components/log/**",
+                "C:/esp/v6.1/esp-idf/components/esp_common/**",
+                "C:/esp/v6.1/esp-idf/components/esp_system/**",
+                "C:/Users/hero003/esp/my_heartbeat/components/**"
+            ],
+            "defines": [
+                "ESP_PLATFORM",
+                "IDF_VER=\"v6.1\""
+            ],
+            "compilerPath": "C:/Espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        }
+    ],
+    "version": 4
+}
