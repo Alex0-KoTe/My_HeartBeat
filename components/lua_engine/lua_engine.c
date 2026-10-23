@@ -5,6 +5,7 @@
 #include <lauxlib.h>
 #include <lualib.h>
 #include <string.h>
+#include "mcp23017.h"
 
 static const char* TAG = "LUA_ENGINE";
 static lua_State* L = NULL;
@@ -17,8 +18,10 @@ esp_err_t lua_engine_init(void) {
     }
     
     luaL_openlibs(L);
+
     ESP_LOGI(TAG, "Lua engine initialized");
-    
+    mcp23017_register_lua(L);
+    ESP_LOGI(TAG, "MCP23017 Lua bindings registered");
     return ESP_OK;
 }
 

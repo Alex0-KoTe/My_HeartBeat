@@ -7,4 +7,5 @@ idf_component_register(
         lua_engine
         led_driver
         nvs_flash
+        mcp23017
 )

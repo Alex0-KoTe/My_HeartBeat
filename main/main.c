@@ -5,11 +5,12 @@
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "esp_event.h"
-#include "nvs_flash.h"           // <-- ДОБАВИТЬ
+#include "nvs_flash.h"           
 #include "spiffs_manager.h"
 #include "web_server.h"
 #include "lua_engine.h"
 #include "led_driver.h"
+#include "mcp23017.h"
 
 static const char* TAG = "MAIN";
 
@@ -52,6 +53,7 @@ static void set_static_ip(esp_netif_t* netif) {
     esp_netif_set_ip_info(netif, &ip_info);
     ESP_LOGI(TAG, "Static IP set: %s", STATIC_IP);
 }
+
 
 void led_task(void* pvParameters) {
     led_config_t* cfg = (led_config_t*)pvParameters;
@@ -141,6 +143,12 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_start());
     
     ESP_LOGI(TAG, "Wi-Fi initialization complete");
+
+    // Инициализация MCP23017
+      ESP_ERROR_CHECK(mcp23017_bus_init(MCP23017_SDA_PIN, MCP23017_SCL_PIN, 100000));
+      ESP_ERROR_CHECK(mcp23017_add_device(0x20, true));   // с прерываниями
+        // ESP_ERROR_CHECK(mcp23017_add_device(0x21, false));  // раскомментировать при добавлении
+      ESP_ERROR_CHECK(mcp23017_start_task());
     
     // 8. Web-сервер
     ret = web_server_start();

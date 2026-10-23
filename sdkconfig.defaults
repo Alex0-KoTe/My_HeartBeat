@@ -5,3 +5,5 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
 CONFIG_SPIFFS_MAX_PARTITIONS=3
+# Подавляем предупреждение об устаревшем legacy I2C драйвере до момента его плановой миграции
+CONFIG_I2C_SUPPRESS_DEPRECATE_WARN=y

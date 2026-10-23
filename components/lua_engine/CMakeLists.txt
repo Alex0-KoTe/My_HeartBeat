@@ -4,4 +4,5 @@ idf_component_register(
     REQUIRES 
         filesystem
         lua
+        mcp23017
 )
