@@ -6,6 +6,7 @@
 
 typedef struct {
     gpio_num_t pin;
+    bool active_low;  // true, если 0 = ВКЛ, 1 = ВЫКЛ
     bool state;
 } led_config_t;
 

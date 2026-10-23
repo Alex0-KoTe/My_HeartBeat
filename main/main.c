@@ -14,7 +14,9 @@
 static const char* TAG = "MAIN";
 
 static led_config_t led_config = {
-    .pin = GPIO_NUM_2
+    .pin = GPIO_NUM_16,
+    .active_low = true,
+    .state = false
 };
 
 // ====== НАСТРОЙКИ СЕТИ ======
@@ -52,11 +54,25 @@ static void set_static_ip(esp_netif_t* netif) {
 }
 
 void led_task(void* pvParameters) {
+    led_config_t* cfg = (led_config_t*)pvParameters;
+    
     while (1) {
-        led_toggle(&led_config);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        // "lub" (первый удар)
+        led_on(cfg);
+        vTaskDelay(120 / portTICK_PERIOD_MS);  // 120 мс горит
+        led_off(cfg);
+        vTaskDelay(150 / portTICK_PERIOD_MS);  // 150 мс пауза между ударами
+        
+        // "dub" (второй удар)
+        led_on(cfg);
+        vTaskDelay(120 / portTICK_PERIOD_MS);  // 120 мс горит
+        led_off(cfg);
+        
+        // Длинная пауза до следующего цикла (ритм ~65 ударов в минуту)
+        vTaskDelay(600 / portTICK_PERIOD_MS);  
     }
 }
+
 
 void lua_task(void* pvParameters) {
     vTaskDelay(5000 / portTICK_PERIOD_MS);
@@ -134,7 +150,7 @@ void app_main(void) {
     }
     
     // 9. Задачи
-    xTaskCreate(led_task, "LED_TASK", 4096, NULL, 5, NULL);
+     xTaskCreate(led_task, "LED_TASK", 4096, &led_config, 5, NULL);
     xTaskCreate(lua_task, "LUA_TASK", 8192, NULL, 5, NULL);
     
     ESP_LOGI(TAG, "Application started. Web server at http://%s", STATIC_IP);
