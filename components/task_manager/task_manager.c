@@ -13,9 +13,9 @@
 static const char *TAG = "TASK_MGR";
 
 // ============================================================================
-// Кольцевой буфер логов (для веб-терминала)
+// Кольцевой буфер логов (увеличен до 8192 байт)
 // ============================================================================
-#define LOG_BUFFER_SIZE 4096
+#define LOG_BUFFER_SIZE 8192
 static char log_buffer[LOG_BUFFER_SIZE];
 static int log_write_pos = 0;
 static SemaphoreHandle_t log_mutex = NULL;
@@ -23,7 +23,7 @@ static SemaphoreHandle_t log_mutex = NULL;
 void task_manager_log(const char* fmt, ...) {
     if (log_mutex == NULL) return;
     
-    char temp[256];
+    char temp[512];
     va_list args;
     va_start(args, fmt);
     int len = vsnprintf(temp, sizeof(temp), fmt, args);
@@ -31,17 +31,22 @@ void task_manager_log(const char* fmt, ...) {
     
     xSemaphoreTake(log_mutex, portMAX_DELAY);
     
-    // Копируем в буфер, не выходя за границы
+    // Если сообщение не помещается, сдвигаем буфер
+    if (log_write_pos + len >= LOG_BUFFER_SIZE - 1) {
+        int shift = log_write_pos + len - (LOG_BUFFER_SIZE - 100);
+        if (shift > 0 && shift < log_write_pos) {
+            memmove(log_buffer, log_buffer + shift, log_write_pos - shift);
+            log_write_pos -= shift;
+        } else {
+            log_write_pos = 0;
+        }
+    }
+    
+    // Копируем в буфер
     for (int i = 0; i < len && log_write_pos < LOG_BUFFER_SIZE - 1; i++) {
         log_buffer[log_write_pos++] = temp[i];
     }
     log_buffer[log_write_pos] = '\0';
-    
-    // Если буфер заполняется, сдвигаем содержимое
-    if (log_write_pos >= LOG_BUFFER_SIZE - 200) {
-        memmove(log_buffer, log_buffer + 1000, LOG_BUFFER_SIZE - 1000);
-        log_write_pos -= 1000;
-    }
     
     xSemaphoreGive(log_mutex);
 }
@@ -56,6 +61,7 @@ void task_manager_clear_logs(void) {
     log_write_pos = 0;
     log_buffer[0] = '\0';
     xSemaphoreGive(log_mutex);
+    ESP_LOGI(TAG, "Logs cleared");
 }
 
 // ============================================================================

@@ -169,6 +169,16 @@ static esp_err_t api_logs_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
+// API: Очистка логов
+// ============================================================================
+static esp_err_t api_logs_clear_handler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "application/json");
+    task_manager_clear_logs();
+    httpd_resp_sendstr(req, "{\"status\":\"success\",\"message\":\"Logs cleared\"}");
+    return ESP_OK;
+}
+
+// ============================================================================
 // API: Статус текущей задачи
 // ============================================================================
 static esp_err_t api_status_handler(httpd_req_t *req) {
@@ -250,6 +260,14 @@ esp_err_t web_server_start(void) {
         .user_ctx = NULL
     };
     httpd_register_uri_handler(server, &api_logs_uri);
+    
+    httpd_uri_t api_logs_clear_uri = {
+        .uri = "/api/logs/clear",
+        .method = HTTP_POST,
+        .handler = api_logs_clear_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &api_logs_clear_uri);
     
     httpd_uri_t api_status_uri = {
         .uri = "/api/status",

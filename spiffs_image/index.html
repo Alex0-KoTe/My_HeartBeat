@@ -90,6 +90,7 @@
         
         .btn.run:hover { box-shadow: 0 6px 20px rgba(17, 153, 142, 0.4); }
         
+        /* Адаптивный терминал */
         .terminal {
             background: #0d0d0d;
             border: 1px solid #333;
@@ -98,9 +99,10 @@
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 14px;
             line-height: 1.6;
-            height: 400px;
+            height: calc(100vh - 350px);
+            min-height: 300px;
+            max-height: 600px;
             overflow-y: auto;
-            color: #00ff00;
         }
         
         .terminal::-webkit-scrollbar { width: 8px; }
@@ -113,10 +115,12 @@
             to { opacity: 1; transform: translateX(0); }
         }
         
-        .log-info { color: #00ff00; }
-        .log-error { color: #ff5555; }
-        .log-warning { color: #ffaa00; }
-        .log-system { color: #667eea; }
+        /* Цветовая схема */
+        .log-info { color: #38ef7d; }        /* Зелёный - системные сообщения */
+        .log-error { color: #ff5555; }       /* Красный - ошибки */
+        .log-warning { color: #ffaa00; }     /* Оранжевый - предупреждения */
+        .log-system { color: #667eea; }      /* Синий - системные */
+        .log-lua { color: #ffffff; }         /* Белый - вывод Lua */
         
         .status-bar {
             display: flex;
@@ -258,7 +262,7 @@
             }
         }
 
-        // Polling логов (каждые 500мс)
+        // Polling логов (каждые 300мс для надёжности)
         function startLogPolling() {
             if (logPollingInterval) clearInterval(logPollingInterval);
             
@@ -269,13 +273,13 @@
                     
                     if (logs.length > lastLogLength) {
                         const newLogs = logs.substring(lastLogLength);
-                        appendLog(newLogs, 'info');
+                        appendLog(newLogs, 'auto');
                         lastLogLength = logs.length;
                     }
                 } catch (error) {
                     // Тихая ошибка
                 }
-            }, 500);
+            }, 300);
         }
 
         function stopLogPolling() {
@@ -323,7 +327,7 @@
             }, 1000);
         }
 
-        // Добавление лога в терминал
+        // Добавление лога в терминал с автоматическим определением типа
         function appendLog(text, type = 'info') {
             const terminal = document.getElementById('terminal-output');
             const lines = text.split('\n');
@@ -331,7 +335,18 @@
             lines.forEach(line => {
                 if (line.trim()) {
                     const div = document.createElement('div');
-                    div.className = 'log-line log-' + type;
+                    
+                    // Автоматическое определение типа для 'auto'
+                    let finalType = type;
+                    if (type === 'auto') {
+                        if (line.startsWith('[TASK]') || line.startsWith('[MGR]') || line.startsWith('[WDT]')) {
+                            finalType = 'info'; // Зелёный для системных
+                        } else {
+                            finalType = 'lua'; // Белый для Lua
+                        }
+                    }
+                    
+                    div.className = 'log-line log-' + finalType;
                     div.textContent = line;
                     terminal.appendChild(div);
                 }
@@ -349,15 +364,15 @@
             statusText.textContent = text;
         }
 
-        // Очистка терминала
-        function clearTerminal() {
-            document.getElementById('terminal-output').innerHTML = 
-                '<div class="log-line log-system">Терминал очищен</div>';
-            lastLogLength = 0;
-            
-            if (statusPollingInterval) {
-                clearInterval(statusPollingInterval);
-                statusPollingInterval = null;
+        // Очистка терминала (с очисткой на сервере)
+        async function clearTerminal() {
+            try {
+                await fetch('/api/logs/clear', { method: 'POST' });
+                document.getElementById('terminal-output').innerHTML = 
+                    '<div class="log-line log-system">Терминал очищен</div>';
+                lastLogLength = 0;
+            } catch (error) {
+                appendLog('Ошибка очистки: ' + error.message, 'error');
             }
         }
 
@@ -367,7 +382,7 @@
                 const response = await fetch('/api/logs');
                 const logs = await response.text();
                 document.getElementById('terminal-output').innerHTML = '';
-                appendLog(logs, 'info');
+                appendLog(logs, 'auto');
                 lastLogLength = logs.length;
             } catch (error) {
                 appendLog('Ошибка обновления: ' + error.message, 'error');
