@@ -17,7 +17,8 @@
                 "C:/esp/v6.1/esp-idf/components/log/include",
                 "C:/esp/v6.1/esp-idf/components/esp_common/include",
                 "C:/esp/v6.1/esp-idf/components/esp_system/include",
-                "C:/Users/hero003/esp/my_heartbeat/components/**"
+                "C:/Users/hero003/esp/my_heartbeat/components/**",
+                "C:/Users/hero003/esp/my_heartbeat/build/config"
             ],
             "defines": [
                 "ESP_PLATFORM",

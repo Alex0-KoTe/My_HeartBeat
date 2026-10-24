@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lauxlib.h"
+#include "task_manager.h"
 
 static const char* TAG = "LUA_ENGINE";
 static lua_State* L = NULL;
@@ -29,13 +30,19 @@ esp_err_t lua_engine_init(void) {
     
     luaL_openlibs(L);
 
-    // Регистрируем функцию delay для Lua
-   lua_pushcfunction(L, l_delay);
-   lua_setglobal(L, "delay");
+    // 1. Регистрируем функцию задержки
+    lua_pushcfunction(L, l_delay);
+    lua_setglobal(L, "delay");
 
-    ESP_LOGI(TAG, "Lua engine initialized");
+    // 2. Регистрируем биндинги MCP23017 (реле, входы)
     mcp23017_register_lua(L);
     ESP_LOGI(TAG, "MCP23017 Lua bindings registered");
+
+    // 3. Регистрируем биндинги Task Manager (wdt_feed)
+    task_manager_register_lua_bindings(L); 
+    ESP_LOGI(TAG, "Task Manager Lua bindings registered");
+
+    ESP_LOGI(TAG, "Lua engine fully initialized");
     return ESP_OK;
 }
 

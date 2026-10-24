@@ -8,4 +8,6 @@ idf_component_register(
         esp_event
         filesystem
         lua_engine
-)
+        task_manager
+
+        )

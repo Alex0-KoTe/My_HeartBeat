@@ -5,4 +5,6 @@ idf_component_register(
         filesystem
         lua
         mcp23017
+        task_manager
+
 )

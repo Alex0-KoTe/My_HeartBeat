@@ -11,6 +11,7 @@
 #include "lua_engine.h"
 #include "led_driver.h"
 #include "mcp23017.h"
+#include "task_manager.h"
 
 static const char* TAG = "MAIN";
 
@@ -87,6 +88,7 @@ void lua_task(void* pvParameters) {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting application");
     
+    
     // ===== 0. ИНИЦИАЛИЗАЦИЯ NVS (КРИТИЧНО!) =====
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -108,6 +110,7 @@ void app_main(void) {
     // 2. LED
     led_init(&led_config);
     
+    ESP_ERROR_CHECK(task_manager_init());
     // 3. Lua
     lua_engine_init();
     
