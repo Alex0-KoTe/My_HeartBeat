@@ -23,7 +23,7 @@ static led_config_t led_config = {
 // ====== НАСТРОЙКИ СЕТИ ======
 #define WIFI_SSID       "KoTe"
 #define WIFI_PASSWORD   "DYNFF39666"
-#define STATIC_IP       "192.168.0.100"
+#define STATIC_IP       "192.168.0.111"
 #define STATIC_GW       "192.168.0.1"
 #define STATIC_NETMASK  "255.255.255.0"
 // ============================

@@ -37,7 +37,7 @@ static int lua_mcp_rl_rw(lua_State *L) {
         return 1;
     } else {
         // Если есть аргумент -> это ЗАПИСЬ
-        bool value = lua_toboolean(L, 1);
+         int value = lua_tointeger(L, 1);
         mcp23017_write_pin_a(address, pin, value);
         return 0;
     }
