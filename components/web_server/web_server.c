@@ -97,7 +97,7 @@ static esp_err_t api_scripts_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
-// API: Запуск Lua-скрипта (делегирование Task Manager'у)
+// API: Запуск Lua-скрипта
 // ============================================================================
 static esp_err_t api_run_handler(httpd_req_t *req) {
     char query[256];
@@ -156,7 +156,7 @@ static esp_err_t api_run_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
-// API: Получение логов Task Manager (для терминала)
+// API: Получение логов Task Manager
 // ============================================================================
 static esp_err_t api_logs_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
@@ -164,6 +164,32 @@ static esp_err_t api_logs_handler(httpd_req_t *req) {
     
     const char* logs = task_manager_get_logs();
     httpd_resp_sendstr(req, logs ? logs : "");
+    
+    return ESP_OK;
+}
+
+// ============================================================================
+// API: Статус текущей задачи
+// ============================================================================
+static esp_err_t api_status_handler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    task_mgr_state_t state = task_manager_get_state();
+    const char* state_str;
+    
+    switch (state) {
+        case TASK_MGR_STATE_IDLE:              state_str = "idle"; break;
+        case TASK_MGR_STATE_RUNNING:           state_str = "running"; break;
+        case TASK_MGR_STATE_CRASHED:           state_str = "crashed"; break;
+        case TASK_MGR_STATE_MEMORY_ERROR:      state_str = "memory_error"; break;
+        case TASK_MGR_STATE_WATCHDOG_TIMEOUT:  state_str = "watchdog_timeout"; break;
+        default:                               state_str = "unknown";
+    }
+    
+    char response[128];
+    snprintf(response, sizeof(response), "{\"status\":\"%s\"}", state_str);
+    httpd_resp_sendstr(req, response);
     
     return ESP_OK;
 }
@@ -224,6 +250,14 @@ esp_err_t web_server_start(void) {
         .user_ctx = NULL
     };
     httpd_register_uri_handler(server, &api_logs_uri);
+    
+    httpd_uri_t api_status_uri = {
+        .uri = "/api/status",
+        .method = HTTP_GET,
+        .handler = api_status_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &api_status_uri);
     
     ESP_LOGI(TAG, "Web server started on port %d", config.server_port);
     return ESP_OK;

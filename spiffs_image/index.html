@@ -5,11 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32 Lua Controller</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -19,10 +15,7 @@
             padding: 20px;
         }
         
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        .container { max-width: 1200px; margin: 0 auto; }
         
         h1 {
             text-align: center;
@@ -62,13 +55,8 @@
             transition: background 0.3s;
         }
         
-        .script-item:hover {
-            background: rgba(102, 126, 234, 0.1);
-        }
-        
-        .script-item:last-child {
-            border-bottom: none;
-        }
+        .script-item:hover { background: rgba(102, 126, 234, 0.1); }
+        .script-item:last-child { border-bottom: none; }
         
         .btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -100,14 +88,7 @@
             box-shadow: 0 4px 15px rgba(17, 153, 142, 0.3);
         }
         
-        .btn.run:hover {
-            box-shadow: 0 6px 20px rgba(17, 153, 142, 0.4);
-        }
-        
-        .btn.stop {
-            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
-            box-shadow: 0 4px 15px rgba(235, 51, 73, 0.3);
-        }
+        .btn.run:hover { box-shadow: 0 6px 20px rgba(17, 153, 142, 0.4); }
         
         .terminal {
             background: #0d0d0d;
@@ -122,24 +103,11 @@
             color: #00ff00;
         }
         
-        .terminal::-webkit-scrollbar {
-            width: 8px;
-        }
+        .terminal::-webkit-scrollbar { width: 8px; }
+        .terminal::-webkit-scrollbar-track { background: #1a1a1a; }
+        .terminal::-webkit-scrollbar-thumb { background: #667eea; border-radius: 4px; }
         
-        .terminal::-webkit-scrollbar-track {
-            background: #1a1a1a;
-        }
-        
-        .terminal::-webkit-scrollbar-thumb {
-            background: #667eea;
-            border-radius: 4px;
-        }
-        
-        .log-line {
-            margin: 2px 0;
-            animation: fadeIn 0.3s;
-        }
-        
+        .log-line { margin: 2px 0; animation: fadeIn 0.3s; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateX(-10px); }
             to { opacity: 1; transform: translateX(0); }
@@ -161,11 +129,7 @@
             font-size: 13px;
         }
         
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .status-indicator { display: flex; align-items: center; gap: 8px; }
         
         .status-dot {
             width: 10px;
@@ -175,43 +139,28 @@
             animation: pulse 2s infinite;
         }
         
-        .status-dot.running {
-            background: #ffaa00;
-        }
-        
-        .status-dot.error {
-            background: #ff5555;
-            animation: none;
-        }
+        .status-dot.running { background: #ffaa00; }
+        .status-dot.error { background: #ff5555; animation: none; }
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
         
-        .terminal-controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
+        .terminal-controls { display: flex; gap: 10px; }
         
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 12px;
-        }
+        .btn-small { padding: 6px 12px; font-size: 12px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🚀 ESP32 Lua Controller</h1>
         
-        <!-- Карточка скриптов -->
         <div class="card">
-            <h2>📂 Доступные скрипты</h2>
+            <h2> Доступные скрипты</h2>
             <div id="script-list">Загрузка списка...</div>
         </div>
         
-        <!-- Карточка терминала -->
         <div class="card">
             <h2>💻 Системный терминал</h2>
             
@@ -235,6 +184,7 @@
 
     <script>
         let logPollingInterval = null;
+        let statusPollingInterval = null;
         let lastLogLength = 0;
         
         // Загрузка списка скриптов
@@ -257,7 +207,7 @@
                     item.className = 'script-item';
                     
                     const nameSpan = document.createElement('span');
-                    nameSpan.textContent = '📜 ' + file;
+                    nameSpan.textContent = ' ' + file;
                     
                     const btn = document.createElement('button');
                     btn.className = 'btn run';
@@ -278,7 +228,7 @@
         // Запуск скрипта
         async function runScript(filename, btnElement) {
             btnElement.disabled = true;
-            btnElement.textContent = '⏳ Запуск...';
+            btnElement.textContent = '⏳ Выполняется...';
             updateStatus('running', 'Выполнение: ' + filename);
             
             try {
@@ -293,6 +243,7 @@
                 } else if (response.ok && result.status === 'success') {
                     appendLog('✅ Запуск: ' + filename, 'info');
                     startLogPolling();
+                    startStatusPolling(btnElement, filename);
                 } else {
                     appendLog('❌ Ошибка: ' + (result.message || 'Неизвестная ошибка'), 'error');
                     btnElement.disabled = false;
@@ -307,7 +258,7 @@
             }
         }
 
-        // Polling логов
+        // Polling логов (каждые 500мс)
         function startLogPolling() {
             if (logPollingInterval) clearInterval(logPollingInterval);
             
@@ -322,9 +273,9 @@
                         lastLogLength = logs.length;
                     }
                 } catch (error) {
-                    // Тихая ошибка при polling
+                    // Тихая ошибка
                 }
-            }, 500); // Проверяем каждые 500мс
+            }, 500);
         }
 
         function stopLogPolling() {
@@ -332,6 +283,44 @@
                 clearInterval(logPollingInterval);
                 logPollingInterval = null;
             }
+        }
+
+        // Polling статуса задачи (каждую секунду)
+        function startStatusPolling(btnElement, filename) {
+            if (statusPollingInterval) clearInterval(statusPollingInterval);
+            
+            statusPollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/status');
+                    const result = await response.json();
+                    
+                    if (result.status === 'idle' || result.status === 'crashed' || 
+                        result.status === 'memory_error' || result.status === 'watchdog_timeout') {
+                        
+                        clearInterval(statusPollingInterval);
+                        statusPollingInterval = null;
+                        
+                        btnElement.disabled = false;
+                        btnElement.textContent = '▶ Запустить';
+                        
+                        if (result.status === 'idle') {
+                            updateStatus('idle', 'Готов к работе');
+                            appendLog('✅ Скрипт завершён: ' + filename, 'info');
+                        } else if (result.status === 'crashed') {
+                            updateStatus('error', 'Скрипт упал с ошибкой');
+                            appendLog('💥 Скрипт упал: ' + filename, 'error');
+                        } else if (result.status === 'watchdog_timeout') {
+                            updateStatus('error', 'Превышен таймаут watchdog');
+                            appendLog('⏰ Watchdog timeout: ' + filename, 'warning');
+                        } else if (result.status === 'memory_error') {
+                            updateStatus('error', 'Недостаточно памяти');
+                            appendLog('💾 Memory error: ' + filename, 'error');
+                        }
+                    }
+                } catch (error) {
+                    // Тихая ошибка
+                }
+            }, 1000);
         }
 
         // Добавление лога в терминал
@@ -348,7 +337,6 @@
                 }
             });
             
-            // Автопрокрутка вниз
             terminal.scrollTop = terminal.scrollHeight;
         }
 
@@ -366,6 +354,11 @@
             document.getElementById('terminal-output').innerHTML = 
                 '<div class="log-line log-system">Терминал очищен</div>';
             lastLogLength = 0;
+            
+            if (statusPollingInterval) {
+                clearInterval(statusPollingInterval);
+                statusPollingInterval = null;
+            }
         }
 
         // Ручное обновление логов
