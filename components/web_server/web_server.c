@@ -4,6 +4,7 @@
 #include "task_manager.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
+#include "esp_spiffs.h"
 #include <dirent.h>
 #include <string.h>
 #include <stdlib.h>
@@ -14,6 +15,8 @@ static const char *TAG = "WEB_SERVER";
 // Обработчик для раздачи статических файлов из SPIFFS
 // ============================================================================
 static esp_err_t file_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "File request: %s", req->uri);
+    
     char filepath[1024];
     
     if (strcmp(req->uri, "/") == 0) {
@@ -156,6 +159,120 @@ static esp_err_t api_run_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
+// API: Остановка текущего скрипта
+// ============================================================================
+static esp_err_t api_stop_handler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "application/json");
+    
+    esp_err_t ret = task_manager_stop_current();
+    
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Script stopped by user");
+        httpd_resp_sendstr(req, "{\"status\":\"success\",\"message\":\"Script stopped\"}");
+    } else {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"No script running\"}");
+    }
+    
+    return ESP_OK;
+}
+
+// ============================================================================
+// API: Загрузка Lua-скрипта
+// ============================================================================
+static esp_err_t api_upload_handler(httpd_req_t *req) {
+    char query[256];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Missing filename\"}");
+        return ESP_OK;
+    }
+    
+    char filename[64];
+    if (httpd_query_key_value(query, "filename", filename, sizeof(filename)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Missing filename parameter\"}");
+        return ESP_OK;
+    }
+    
+    size_t len = strlen(filename);
+    if (len < 4 || strcmp(filename + len - 4, ".lua") != 0) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Only .lua files allowed\"}");
+        return ESP_OK;
+    }
+    
+    if (strstr(filename, "..") != NULL || strstr(filename, "/") != NULL) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Invalid filename\"}");
+        return ESP_OK;
+    }
+    
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "/spiffs/scripts/%s", filename);
+    
+    size_t total = 0, used = 0;
+    esp_spiffs_info(NULL, &total, &used);
+    size_t free_space = total - used;
+    
+    if (req->content_len > 10240) {
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"File too large (max 10KB)\"}");
+        return ESP_OK;
+    }
+    
+    if (req->content_len > free_space) {
+        httpd_resp_set_status(req, "507 Insufficient Storage");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Not enough space in SPIFFS\"}");
+        return ESP_OK;
+    }
+    
+    FILE *fp = fopen(filepath, "w");
+    if (fp == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for writing: %s", filepath);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Failed to create file\"}");
+        return ESP_OK;
+    }
+    
+    char buf[512];
+    int remaining = req->content_len;
+    int received = 0;
+    
+    while (remaining > 0) {
+        int recv_len = httpd_req_recv(req, buf, sizeof(buf));
+        if (recv_len <= 0) {
+            fclose(fp);
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Failed to receive data\"}");
+            return ESP_OK;
+        }
+        fwrite(buf, 1, recv_len, fp);
+        remaining -= recv_len;
+        received += recv_len;
+    }
+    
+    fclose(fp);
+    
+    ESP_LOGI(TAG, "Uploaded file: %s (%d bytes)", filename, received);
+    
+    httpd_resp_set_type(req, "application/json");
+    char response[64];
+    snprintf(response, sizeof(response), "{\"status\":\"success\",\"size\":%d}", received);
+    httpd_resp_sendstr(req, response);
+    
+    return ESP_OK;
+}
+
+// ============================================================================
 // API: Получение логов Task Manager
 // ============================================================================
 static esp_err_t api_logs_handler(httpd_req_t *req) {
@@ -209,7 +326,7 @@ static esp_err_t api_status_handler(httpd_req_t *req) {
 // ============================================================================
 esp_err_t web_server_start(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 15;  // Увеличили с 10 до 15 для новых обработчиков
     config.stack_size = 8192;
     
     httpd_handle_t server = NULL;
@@ -219,7 +336,7 @@ esp_err_t web_server_start(void) {
         return ESP_FAIL;
     }
     
-    // Статические файлы
+    // Статические файлы - явные обработчики
     httpd_uri_t root_uri = {
         .uri = "/",
         .method = HTTP_GET,
@@ -228,6 +345,24 @@ esp_err_t web_server_start(void) {
     };
     httpd_register_uri_handler(server, &root_uri);
     
+    // Явные обработчики для CSS и JS
+    httpd_uri_t css_uri = {
+        .uri = "/style.css",
+        .method = HTTP_GET,
+        .handler = file_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &css_uri);
+    
+    httpd_uri_t js_uri = {
+        .uri = "/script.js",
+        .method = HTTP_GET,
+        .handler = file_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &js_uri);
+    
+    // Общий обработчик для остальных файлов
     httpd_uri_t file_uri = {
         .uri = "/*",
         .method = HTTP_GET,
@@ -253,6 +388,22 @@ esp_err_t web_server_start(void) {
     };
     httpd_register_uri_handler(server, &api_run_uri);
     
+    httpd_uri_t api_stop_uri = {
+        .uri = "/api/stop",
+        .method = HTTP_GET,
+        .handler = api_stop_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &api_stop_uri);
+    
+    httpd_uri_t api_upload_uri = {
+        .uri = "/api/upload",
+        .method = HTTP_POST,
+        .handler = api_upload_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &api_upload_uri);
+    
     httpd_uri_t api_logs_uri = {
         .uri = "/api/logs",
         .method = HTTP_GET,
@@ -263,7 +414,7 @@ esp_err_t web_server_start(void) {
     
     httpd_uri_t api_logs_clear_uri = {
         .uri = "/api/logs/clear",
-        .method = HTTP_POST,
+        .method = HTTP_GET,
         .handler = api_logs_clear_handler,
         .user_ctx = NULL
     };

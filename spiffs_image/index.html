@@ -4,167 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32 Lua Controller</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
-            color: #e0e0e0;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container { max-width: 1200px; margin: 0 auto; }
-        
-        h1 {
-            text-align: center;
-            font-size: 2.5em;
-            margin-bottom: 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .card {
-            background: rgba(30, 30, 50, 0.8);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 25px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        }
-        
-        .card h2 {
-            color: #667eea;
-            margin-bottom: 20px;
-            font-size: 1.5em;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .script-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            transition: background 0.3s;
-        }
-        
-        .script-item:hover { background: rgba(102, 126, 234, 0.1); }
-        .script-item:last-child { border-bottom: none; }
-        
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-        }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn:disabled {
-            background: #4a4a6a;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        
-        .btn.run {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            box-shadow: 0 4px 15px rgba(17, 153, 142, 0.3);
-        }
-        
-        .btn.run:hover { box-shadow: 0 6px 20px rgba(17, 153, 142, 0.4); }
-        
-        /* Адаптивный терминал */
-        .terminal {
-            background: #0d0d0d;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 20px;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            height: calc(100vh - 350px);
-            min-height: 300px;
-            max-height: 600px;
-            overflow-y: auto;
-        }
-        
-        .terminal::-webkit-scrollbar { width: 8px; }
-        .terminal::-webkit-scrollbar-track { background: #1a1a1a; }
-        .terminal::-webkit-scrollbar-thumb { background: #667eea; border-radius: 4px; }
-        
-        .log-line { margin: 2px 0; animation: fadeIn 0.3s; }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateX(-10px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        
-        /* Цветовая схема */
-        .log-info { color: #38ef7d; }        /* Зелёный - системные сообщения */
-        .log-error { color: #ff5555; }       /* Красный - ошибки */
-        .log-warning { color: #ffaa00; }     /* Оранжевый - предупреждения */
-        .log-system { color: #667eea; }      /* Синий - системные */
-        .log-lua { color: #ffffff; }         /* Белый - вывод Lua */
-        
-        .status-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 15px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 6px;
-            margin-bottom: 15px;
-            font-size: 13px;
-        }
-        
-        .status-indicator { display: flex; align-items: center; gap: 8px; }
-        
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #38ef7d;
-            animation: pulse 2s infinite;
-        }
-        
-        .status-dot.running { background: #ffaa00; }
-        .status-dot.error { background: #ff5555; animation: none; }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        .terminal-controls { display: flex; gap: 10px; }
-        
-        .btn-small { padding: 6px 12px; font-size: 12px; }
-    </style>
+    <!-- Подключаем внешние стили -->
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <div class="container">
         <h1>🚀 ESP32 Lua Controller</h1>
         
+        <!-- Карточка списка скриптов -->
         <div class="card">
-            <h2> Доступные скрипты</h2>
+            <h2>📂 Доступные скрипты</h2>
             <div id="script-list">Загрузка списка...</div>
         </div>
         
+        <!-- Карточка загрузки скрипта -->
+        <div class="card">
+            <h2>📤 Загрузить скрипт</h2>
+            <div class="upload-area" id="upload-area">
+                <input type="file" id="file-input" accept=".lua" style="display: none;">
+                <button onclick="document.getElementById('file-input').click()" class="btn">
+                     Выбрать файл
+                </button>
+                <span id="file-name">Файл не выбран</span>
+                <button onclick="uploadFile()" class="btn run" id="upload-btn" disabled>
+                    ⬆️ Загрузить
+                </button>
+            </div>
+            <div id="upload-status"></div>
+        </div>
+        
+        <!-- Карточка терминала -->
         <div class="card">
             <h2>💻 Системный терминал</h2>
             
@@ -174,6 +43,9 @@
                     <span id="status-text">Готов к работе</span>
                 </div>
                 <div class="terminal-controls">
+                    <button onclick="stopScript()" class="btn btn-small btn-stop" id="stop-btn" style="display: none;">
+                        ⏹ Остановить
+                    </button>
                     <button onclick="clearTerminal()" class="btn btn-small">Очистить</button>
                     <button onclick="refreshLogs()" class="btn btn-small">Обновить</button>
                 </div>
@@ -186,211 +58,7 @@
         </div>
     </div>
 
-    <script>
-        let logPollingInterval = null;
-        let statusPollingInterval = null;
-        let lastLogLength = 0;
-        
-        // Загрузка списка скриптов
-        async function loadScripts() {
-            try {
-                const response = await fetch('/api/scripts');
-                if (!response.ok) throw new Error('Network response was not ok');
-                const scripts = await response.json();
-                
-                const listDiv = document.getElementById('script-list');
-                listDiv.innerHTML = '';
-                
-                if (scripts.length === 0) {
-                    listDiv.innerHTML = '<p style="text-align:center; color:#888;">Папка /scripts пуста</p>';
-                    return;
-                }
-
-                scripts.forEach(file => {
-                    const item = document.createElement('div');
-                    item.className = 'script-item';
-                    
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = ' ' + file;
-                    
-                    const btn = document.createElement('button');
-                    btn.className = 'btn run';
-                    btn.textContent = '▶ Запустить';
-                    btn.id = 'btn-' + file;
-                    btn.onclick = () => runScript(file, btn);
-                    
-                    item.appendChild(nameSpan);
-                    item.appendChild(btn);
-                    listDiv.appendChild(item);
-                });
-            } catch (error) {
-                document.getElementById('script-list').innerHTML = 
-                    '<p style="color:#ff5555; text-align:center;">Ошибка загрузки: ' + error.message + '</p>';
-            }
-        }
-
-        // Запуск скрипта
-        async function runScript(filename, btnElement) {
-            btnElement.disabled = true;
-            btnElement.textContent = '⏳ Выполняется...';
-            updateStatus('running', 'Выполнение: ' + filename);
-            
-            try {
-                const response = await fetch(`/api/run?file=${encodeURIComponent(filename)}`);
-                const result = await response.json();
-
-                if (response.status === 409) {
-                    appendLog('⚠️ Скрипт уже выполняется', 'warning');
-                    btnElement.disabled = false;
-                    btnElement.textContent = '▶ Запустить';
-                    updateStatus('running', 'Скрипт уже активен');
-                } else if (response.ok && result.status === 'success') {
-                    appendLog('✅ Запуск: ' + filename, 'info');
-                    startLogPolling();
-                    startStatusPolling(btnElement, filename);
-                } else {
-                    appendLog('❌ Ошибка: ' + (result.message || 'Неизвестная ошибка'), 'error');
-                    btnElement.disabled = false;
-                    btnElement.textContent = '▶ Запустить';
-                    updateStatus('error', 'Ошибка запуска');
-                }
-            } catch (error) {
-                appendLog('❌ Ошибка сети: ' + error.message, 'error');
-                btnElement.disabled = false;
-                btnElement.textContent = '▶ Запустить';
-                updateStatus('error', 'Ошибка сети');
-            }
-        }
-
-        // Polling логов (каждые 300мс для надёжности)
-        function startLogPolling() {
-            if (logPollingInterval) clearInterval(logPollingInterval);
-            
-            logPollingInterval = setInterval(async () => {
-                try {
-                    const response = await fetch('/api/logs');
-                    const logs = await response.text();
-                    
-                    if (logs.length > lastLogLength) {
-                        const newLogs = logs.substring(lastLogLength);
-                        appendLog(newLogs, 'auto');
-                        lastLogLength = logs.length;
-                    }
-                } catch (error) {
-                    // Тихая ошибка
-                }
-            }, 300);
-        }
-
-        function stopLogPolling() {
-            if (logPollingInterval) {
-                clearInterval(logPollingInterval);
-                logPollingInterval = null;
-            }
-        }
-
-        // Polling статуса задачи (каждую секунду)
-        function startStatusPolling(btnElement, filename) {
-            if (statusPollingInterval) clearInterval(statusPollingInterval);
-            
-            statusPollingInterval = setInterval(async () => {
-                try {
-                    const response = await fetch('/api/status');
-                    const result = await response.json();
-                    
-                    if (result.status === 'idle' || result.status === 'crashed' || 
-                        result.status === 'memory_error' || result.status === 'watchdog_timeout') {
-                        
-                        clearInterval(statusPollingInterval);
-                        statusPollingInterval = null;
-                        
-                        btnElement.disabled = false;
-                        btnElement.textContent = '▶ Запустить';
-                        
-                        if (result.status === 'idle') {
-                            updateStatus('idle', 'Готов к работе');
-                            appendLog('✅ Скрипт завершён: ' + filename, 'info');
-                        } else if (result.status === 'crashed') {
-                            updateStatus('error', 'Скрипт упал с ошибкой');
-                            appendLog('💥 Скрипт упал: ' + filename, 'error');
-                        } else if (result.status === 'watchdog_timeout') {
-                            updateStatus('error', 'Превышен таймаут watchdog');
-                            appendLog('⏰ Watchdog timeout: ' + filename, 'warning');
-                        } else if (result.status === 'memory_error') {
-                            updateStatus('error', 'Недостаточно памяти');
-                            appendLog('💾 Memory error: ' + filename, 'error');
-                        }
-                    }
-                } catch (error) {
-                    // Тихая ошибка
-                }
-            }, 1000);
-        }
-
-        // Добавление лога в терминал с автоматическим определением типа
-        function appendLog(text, type = 'info') {
-            const terminal = document.getElementById('terminal-output');
-            const lines = text.split('\n');
-            
-            lines.forEach(line => {
-                if (line.trim()) {
-                    const div = document.createElement('div');
-                    
-                    // Автоматическое определение типа для 'auto'
-                    let finalType = type;
-                    if (type === 'auto') {
-                        if (line.startsWith('[TASK]') || line.startsWith('[MGR]') || line.startsWith('[WDT]')) {
-                            finalType = 'info'; // Зелёный для системных
-                        } else {
-                            finalType = 'lua'; // Белый для Lua
-                        }
-                    }
-                    
-                    div.className = 'log-line log-' + finalType;
-                    div.textContent = line;
-                    terminal.appendChild(div);
-                }
-            });
-            
-            terminal.scrollTop = terminal.scrollHeight;
-        }
-
-        // Обновление статуса
-        function updateStatus(state, text) {
-            const dot = document.getElementById('status-dot');
-            const statusText = document.getElementById('status-text');
-            
-            dot.className = 'status-dot ' + state;
-            statusText.textContent = text;
-        }
-
-        // Очистка терминала (с очисткой на сервере)
-        async function clearTerminal() {
-            try {
-                await fetch('/api/logs/clear', { method: 'POST' });
-                document.getElementById('terminal-output').innerHTML = 
-                    '<div class="log-line log-system">Терминал очищен</div>';
-                lastLogLength = 0;
-            } catch (error) {
-                appendLog('Ошибка очистки: ' + error.message, 'error');
-            }
-        }
-
-        // Ручное обновление логов
-        async function refreshLogs() {
-            try {
-                const response = await fetch('/api/logs');
-                const logs = await response.text();
-                document.getElementById('terminal-output').innerHTML = '';
-                appendLog(logs, 'auto');
-                lastLogLength = logs.length;
-            } catch (error) {
-                appendLog('Ошибка обновления: ' + error.message, 'error');
-            }
-        }
-
-        // Загрузка при старте
-        loadScripts();
-    </script>
+    <!-- Подключаем внешний скрипт -->
+    <script src="/script.js"></script>
 </body>
 </html>

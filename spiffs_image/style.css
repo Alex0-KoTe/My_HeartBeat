@@ -1,0 +1,183 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+    color: #e0e0e0;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container { max-width: 1200px; margin: 0 auto; }
+
+h1 {
+    text-align: center;
+    font-size: 2.5em;
+    margin-bottom: 30px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.card {
+    background: rgba(30, 30, 50, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 25px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.card h2 {
+    color: #667eea;
+    margin-bottom: 20px;
+    font-size: 1.5em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Список скриптов */
+.script-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.3s;
+}
+.script-item:hover { background: rgba(102, 126, 234, 0.1); }
+.script-item:last-child { border-bottom: none; }
+
+/* Кнопки */
+.btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+.btn:disabled {
+    background: #4a4a6a;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+.btn.run {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    box-shadow: 0 4px 15px rgba(17, 153, 142, 0.3);
+}
+.btn.run:hover { box-shadow: 0 6px 20px rgba(17, 153, 142, 0.4); }
+
+.btn-stop {
+    background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+    box-shadow: 0 4px 15px rgba(235, 51, 73, 0.3);
+}
+.btn-stop:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(235, 51, 73, 0.4);
+}
+
+/* Зона загрузки файлов */
+.upload-area {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border: 2px dashed rgba(102, 126, 234, 0.3);
+    transition: all 0.3s;
+}
+.upload-area:hover {
+    border-color: rgba(102, 126, 234, 0.6);
+    background: rgba(0, 0, 0, 0.3);
+}
+#file-name {
+    flex-grow: 1;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    color: #888;
+}
+#upload-status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    display: none;
+}
+#upload-status.success {
+    background: rgba(56, 239, 125, 0.1);
+    color: #38ef7d;
+    display: block;
+}
+#upload-status.error {
+    background: rgba(255, 85, 85, 0.1);
+    color: #ff5555;
+    display: block;
+}
+
+/* Терминал */
+.terminal {
+    background: #0d0d0d;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 20px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    height: calc(100vh - 450px);
+    min-height: 300px;
+    max-height: 600px;
+    overflow-y: auto;
+}
+.terminal::-webkit-scrollbar { width: 8px; }
+.terminal::-webkit-scrollbar-track { background: #1a1a1a; }
+.terminal::-webkit-scrollbar-thumb { background: #667eea; border-radius: 4px; }
+
+.log-line { margin: 2px 0; animation: fadeIn 0.3s; }
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+/* Цвета логов */
+.log-info { color: #38ef7d; }
+.log-error { color: #ff5555; }
+.log-warning { color: #ffaa00; }
+.log-system { color: #667eea; }
+.log-lua { color: #ffffff; }
+
+/* Статус-бар */
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 13px;
+}
+.status-indicator { display: flex; align-items: center; gap: 8px; }
+.status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #38ef7d; animation: pulse 2s infinite;
+}
+.status-dot.running { background: #ffaa00; }
+.status-dot.error { background: #ff5555; animation: none; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+.terminal-controls { display: flex; gap: 10px; align-items: center; }
+.btn-small { padding: 6px 12px; font-size: 12px; }
