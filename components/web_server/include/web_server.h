@@ -3,7 +3,10 @@
 
 #include "esp_err.h"
 
+// Запуск веб-сервера
 esp_err_t web_server_start(void);
-esp_err_t web_server_stop(void);
+
+// Отправка сообщения всем WebSocket клиентам
+void web_server_ws_broadcast(const char* message);
 
 #endif

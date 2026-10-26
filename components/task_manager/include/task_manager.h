@@ -19,8 +19,12 @@ typedef struct {
     const char* task_name;      // Имя для отладки
     uint32_t stack_size;        // Размер стека (байт)
     uint32_t wdt_timeout_ms;    // Таймаут watchdog (0 = отключен)
-    bool auto_restart;          // Автоперезапуск при сбое (пока не реализован)
+    bool auto_restart;          // Автоперезапуск при сбое
 } task_mgr_config_t;
+
+// Тип callback-функции для событий Task Manager
+// message - текст события (лог или статус)
+typedef void (*task_mgr_event_callback_t)(const char* message);
 
 // Инициализация менеджера (вызывается один раз при старте)
 esp_err_t task_manager_init(void);
@@ -37,14 +41,12 @@ task_mgr_state_t task_manager_get_state(void);
 // Регистрация Lua-биндингов (wdt_feed и др.)
 void task_manager_register_lua_bindings(void* L);
 
-// === НОВЫЕ ФУНКЦИИ ДЛЯ ЛОГИРОВАНИЯ ===
-// Добавить строку в лог (формат как printf)
+// === ФУНКЦИИ ДЛЯ ЛОГИРОВАНИЯ ===
 void task_manager_log(const char* fmt, ...);
-
-// Получить текущий лог (для веб-интерфейса)
 const char* task_manager_get_logs(void);
-
-// Очистить лог
 void task_manager_clear_logs(void);
+
+// === НОВОЕ: Регистрация callback для WebSocket ===
+void task_manager_set_event_callback(task_mgr_event_callback_t callback);
 
 #endif
