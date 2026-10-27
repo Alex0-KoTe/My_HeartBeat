@@ -22,7 +22,6 @@ void task_manager_set_event_callback(task_mgr_event_callback_t callback) {
     ESP_LOGI(TAG, "Event callback registered");
 }
 
-// Вспомогательная функция отправки события
 static void send_event(const char* message) {
     if (event_callback != NULL) {
         event_callback(message);
@@ -48,6 +47,7 @@ void task_manager_log(const char* fmt, ...) {
     
     xSemaphoreTake(log_mutex, portMAX_DELAY);
     
+    // Если сообщение не помещается, сдвигаем буфер
     if (log_write_pos + len >= LOG_BUFFER_SIZE - 1) {
         int shift = log_write_pos + len - (LOG_BUFFER_SIZE - 100);
         if (shift > 0 && shift < log_write_pos) {
@@ -58,6 +58,7 @@ void task_manager_log(const char* fmt, ...) {
         }
     }
     
+    // Копируем в буфер
     for (int i = 0; i < len && log_write_pos < LOG_BUFFER_SIZE - 1; i++) {
         log_buffer[log_write_pos++] = temp[i];
     }
@@ -65,22 +66,33 @@ void task_manager_log(const char* fmt, ...) {
     
     xSemaphoreGive(log_mutex);
     
-    // Отправляем лог через callback (WebSocket)
-    // Формат: {"type":"log","data":"..."}
-    char ws_msg[600];
-    // Экранируем кавычки и обратные слеши в тексте
+    // ========================================================================
+    // ОТПРАВКА ЧЕРЕЗ WEBSOCKET (Ключевой момент!)
+    // ========================================================================
+    char ws_msg[1024];
     int pos = 0;
     pos += snprintf(ws_msg + pos, sizeof(ws_msg) - pos, "{\"type\":\"log\",\"data\":\"");
+    
+    // Экранируем спецсимволы для корректного JSON
     for (int i = 0; i < len && pos < (int)sizeof(ws_msg) - 10; i++) {
         char c = temp[i];
         if (c == '"' || c == '\\') {
             ws_msg[pos++] = '\\';
-        } else if (c == '\n' || c == '\r') {
-            continue; // пропускаем переносы строк внутри JSON
+            ws_msg[pos++] = c;
+        } else if (c == '\n') {
+            ws_msg[pos++] = '\\';
+            ws_msg[pos++] = 'n';
+        } else if (c == '\r') {
+            continue; // Пропускаем \r, чтобы не было двойных переносов
+        } else if (c == '\t') {
+            ws_msg[pos++] = '\\';
+            ws_msg[pos++] = 't';
+        } else {
+            ws_msg[pos++] = c;
         }
-        ws_msg[pos++] = c;
     }
     pos += snprintf(ws_msg + pos, sizeof(ws_msg) - pos, "\"}");
+    
     send_event(ws_msg);
 }
 
@@ -117,6 +129,7 @@ typedef struct {
 static void managed_task_entry(void *pvParameters) {
     task_params_t *params = (task_params_t *)pvParameters;
     
+    // Логируем старт (это улетит в WebSocket!)
     task_manager_log("[TASK] Started: %s", params->script_path);
     ESP_LOGI(TAG, "Task started: %s", params->script_path);
     
@@ -125,6 +138,7 @@ static void managed_task_entry(void *pvParameters) {
 
     lua_engine_execute_file(params->script_path);
 
+    // Логируем завершение
     task_manager_log("[TASK] Completed: %s", params->script_path);
     ESP_LOGI(TAG, "Task completed normally: %s", params->script_path);
 
@@ -156,10 +170,8 @@ static void wdt_monitor_task(void *pvParameters) {
             uint32_t elapsed_ms = (current_tick - last_wdt_feed_tick) * portTICK_PERIOD_MS;
             
             if (elapsed_ms > current_wdt_timeout_ms) {
-                task_manager_log("[WDT] TIMEOUT! Task exceeded %d ms without feeding.", 
-                                 current_wdt_timeout_ms);
-                ESP_LOGE(TAG, "WATCHDOG TIMEOUT! Task exceeded %d ms without feeding.", 
-                         current_wdt_timeout_ms);
+                task_manager_log("[WDT] TIMEOUT! Task exceeded %d ms without feeding.", current_wdt_timeout_ms);
+                ESP_LOGE(TAG, "WATCHDOG TIMEOUT! Task exceeded %d ms without feeding.", current_wdt_timeout_ms);
                 current_state = TASK_MGR_STATE_WATCHDOG_TIMEOUT;
                 
                 if (current_task_handle != NULL) {
@@ -168,9 +180,8 @@ static void wdt_monitor_task(void *pvParameters) {
                 }
                 current_wdt_timeout_ms = 0;
                 
-                xSemaphoreGive(mgr_mutex);
+                xSemaphoreGive(mgr_mutex); // Отдаём мьютекс перед отправкой события
                 
-                // Отправляем статус через WebSocket
                 send_event("{\"type\":\"status\",\"state\":\"watchdog_timeout\",\"message\":\"Watchdog timeout\"}");
                 continue;
             }
@@ -211,7 +222,6 @@ esp_err_t task_manager_run_lua(const char* script_path, const task_mgr_config_t*
     if (current_state == TASK_MGR_STATE_RUNNING) {
         xSemaphoreGive(mgr_mutex);
         task_manager_log("[MGR] Rejected: Task already running");
-        ESP_LOGW(TAG, "Rejected: Task already running");
         send_event("{\"type\":\"error\",\"message\":\"Task already running\"}");
         return ESP_ERR_INVALID_STATE;
     }
@@ -222,10 +232,7 @@ esp_err_t task_manager_run_lua(const char* script_path, const task_mgr_config_t*
     if (free_heap < required_heap) {
         current_state = TASK_MGR_STATE_MEMORY_ERROR;
         xSemaphoreGive(mgr_mutex);
-        task_manager_log("[MGR] Rejected: Not enough memory. Free: %lu, Required: %lu", 
-                         free_heap, required_heap);
-        ESP_LOGE(TAG, "Rejected: Not enough memory. Free: %lu, Required: %lu", 
-                 free_heap, required_heap);
+        task_manager_log("[MGR] Rejected: Not enough memory. Free: %lu, Required: %lu", free_heap, required_heap);
         send_event("{\"type\":\"error\",\"message\":\"Not enough memory\"}");
         return ESP_ERR_NO_MEM;
     }
@@ -254,7 +261,6 @@ esp_err_t task_manager_run_lua(const char* script_path, const task_mgr_config_t*
         current_state = TASK_MGR_STATE_CRASHED;
         xSemaphoreGive(mgr_mutex);
         task_manager_log("[MGR] Failed to create FreeRTOS task");
-        ESP_LOGE(TAG, "Failed to create FreeRTOS task");
         send_event("{\"type\":\"error\",\"message\":\"Failed to create task\"}");
         return ESP_FAIL;
     }
@@ -263,7 +269,6 @@ esp_err_t task_manager_run_lua(const char* script_path, const task_mgr_config_t*
     xSemaphoreGive(mgr_mutex);
     
     task_manager_log("[MGR] Task started successfully");
-    ESP_LOGI(TAG, "Task started successfully");
     return ESP_OK;
 }
 
@@ -276,7 +281,6 @@ esp_err_t task_manager_stop_current(void) {
         current_wdt_timeout_ms = 0;
         xSemaphoreGive(mgr_mutex);
         task_manager_log("[MGR] Task forcefully stopped");
-        ESP_LOGI(TAG, "Task forcefully stopped");
         send_event("{\"type\":\"status\",\"state\":\"idle\",\"message\":\"Script stopped by user\"}");
         return ESP_OK;
     }

@@ -4,61 +4,240 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32 Lua Controller</title>
-    <!-- Подключаем внешние стили -->
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>🚀 ESP32 Lua Controller</h1>
-        
-        <!-- Карточка списка скриптов -->
-        <div class="card">
-            <h2>📂 Доступные скрипты</h2>
-            <div id="script-list">Загрузка списка...</div>
+    <!-- Шапка -->
+    <header class="header">
+        <div class="logo">🚀 ESP32 Lua Controller</div>
+        <div class="connection-status">
+            <span id="ws-status" class="status-indicator">🔴 Отключено</span>
+            <span id="ip-address">192.168.0.111</span>
         </div>
-        
-        <!-- Карточка загрузки скрипта -->
-        <div class="card">
-            <h2>📤 Загрузить скрипт</h2>
-            <div class="upload-area" id="upload-area">
-                <input type="file" id="file-input" accept=".lua" style="display: none;">
-                <button onclick="document.getElementById('file-input').click()" class="btn">
-                     Выбрать файл
-                </button>
-                <span id="file-name">Файл не выбран</span>
-                <button onclick="uploadFile()" class="btn run" id="upload-btn" disabled>
-                    ⬆️ Загрузить
-                </button>
+    </header>
+
+    <!-- Навигация -->
+    <nav class="tabs">
+        <button class="tab-btn active" data-tab="workspace">📂 Рабочая область</button>
+        <button class="tab-btn" data-tab="editor">📝 Редактор</button>
+        <button class="tab-btn" data-tab="monitor">📊 Монитор</button>
+        <button class="tab-btn" data-tab="settings">⚙️ Настройки</button>
+        <button class="tab-btn" data-tab="docs">📚 Документация</button>
+    </nav>
+
+    <!-- Контейнер вкладок -->
+    <main class="content">
+        <!-- Вкладка 1: Рабочая область -->
+        <div id="tab-workspace" class="tab-content active">
+            <div class="workspace-layout">
+                <aside class="file-panel">
+                    <h3>Файлы</h3>
+                    <div id="file-list" class="file-list">
+                        <p class="loading">Загрузка...</p>
+                    </div>
+                    <button id="btn-upload" class="btn-small">+ Загрузить</button>
+                    <input type="file" id="file-input" accept=".lua" style="display: none;">
+                </aside>
+                <section class="terminal-panel">
+                    <div class="terminal-header">
+                        <span id="task-status">Готов к работе</span>
+                        <div class="terminal-controls">
+                            <button id="btn-clear" class="btn-small">🗑️ Очистить</button>
+                            <button id="btn-autoscroll" class="btn-small active">⬇️ Автоскролл</button>
+                        </div>
+                    </div>
+                    <div id="terminal-output" class="terminal">
+                        <div class="log-line log-system">ESP32 System Terminal v1.0</div>
+                    </div>
+                </section>
             </div>
-            <div id="upload-status"></div>
+            <div class="bottom-toolbar">
+                <button id="btn-run" class="btn-primary">▶ Запустить</button>
+                <button id="btn-stop" class="btn-danger">⏹ Стоп</button>
+                <span id="active-file-label" class="toolbar-info">Файл не выбран</span>
+            </div>
         </div>
-        
-        <!-- Карточка терминала -->
-        <div class="card">
-            <h2>💻 Системный терминал</h2>
-            
-            <div class="status-bar">
-                <div class="status-indicator">
-                    <div class="status-dot" id="status-dot"></div>
-                    <span id="status-text">Готов к работе</span>
+
+        <!-- Вкладка 2: Редактор -->
+        <div id="tab-editor" class="tab-content">
+            <div class="editor-layout">
+                <div id="editor-container" class="editor-area">
+                    <div class="editor-placeholder">
+                        <p>Выберите файл во вкладке "Рабочая область"</p>
+                    </div>
                 </div>
-                <div class="terminal-controls">
-                    <button onclick="stopScript()" class="btn btn-small btn-stop" id="stop-btn" style="display: none;">
-                        ⏹ Остановить
-                    </button>
-                    <button onclick="clearTerminal()" class="btn btn-small">Очистить</button>
-                    <button onclick="refreshLogs()" class="btn btn-small">Обновить</button>
+                <aside class="debugger-panel">
+                    <h3>Отладчик</h3>
+                    <div id="debug-variables" class="debug-section">
+                        <p class="placeholder">Переменные появятся здесь</p>
+                    </div>
+                    <div class="debug-controls">
+                        <button id="btn-debug-continue" class="btn-small" disabled>⏯ Продолжить</button>
+                        <button id="btn-debug-step" class="btn-small" disabled>⏭ Шаг</button>
+                        <button id="btn-debug-into" class="btn-small" disabled>️ В цикл</button>
+                    </div>
+                </aside>
+            </div>
+            <div class="bottom-toolbar">
+                <button id="btn-save" class="btn-primary">💾 Сохранить</button>
+                <button id="btn-editor-run" class="btn-success">▶ Запустить</button>
+                <button id="btn-debug-start" class="btn-warning"> Отладка</button>
+                <button id="btn-editor-stop" class="btn-danger"> Стоп</button>
+                <span id="editor-status" class="toolbar-info">Готов</span>
+            </div>
+        </div>
+
+        <!-- Вкладка 3: Монитор -->
+        <div id="tab-monitor" class="tab-content">
+            <div class="monitor-grid">
+                <div class="metric-card">
+                    <h4>Свободная RAM</h4>
+                    <div class="progress-bar">
+                        <div id="ram-bar" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <span id="ram-text">0 / 0 КБ</span>
+                </div>
+                <div class="metric-card">
+                    <h4>Занято Flash</h4>
+                    <div class="progress-bar">
+                        <div id="flash-bar" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <span id="flash-text">0 / 0 МБ</span>
+                </div>
+                <div class="metric-card">
+                    <h4>Время работы</h4>
+                    <span id="uptime-text">0ч 0м</span>
                 </div>
             </div>
-            
-            <div class="terminal" id="terminal-output">
-                <div class="log-line log-system">ESP32 System Terminal v1.0</div>
-                <div class="log-line log-system">Ожидание команд...</div>
+            <div class="io-panel">
+                <h3>Реле (только индикация)</h3>
+                <div id="relay-indicators" class="io-grid">
+                    <!-- Генерируется JS -->
+                </div>
+                <h3>Входы (кнопки симуляции)</h3>
+                <div id="input-buttons" class="io-grid">
+                    <!-- Генерируется JS -->
+                </div>
+                <button id="btn-reset-io" class="btn-small">🔄 Сброс ручного управления</button>
+            </div>
+        </div>
+
+        <!-- Вкладка 4: Настройки -->
+        <div id="tab-settings" class="tab-content">
+            <div class="settings-section">
+                <h3>Wi-Fi</h3>
+                <div class="form-group">
+                    <label>SSID:</label>
+                    <input type="text" id="wifi-ssid" placeholder="KoTe">
+                </div>
+                <div class="form-group">
+                    <label>Пароль:</label>
+                    <input type="password" id="wifi-password" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                    <label>Статический IP:</label>
+                    <input type="text" id="wifi-ip" placeholder="192.168.0.111">
+                </div>
+                <button id="btn-save-wifi" class="btn-primary">💾 Сохранить Wi-Fi</button>
+            </div>
+            <div class="settings-section">
+                <h3>Система</h3>
+                <div class="form-group">
+                    <label>Watchdog таймаут (мс):</label>
+                    <input type="number" id="wdt-timeout" value="60000">
+                </div>
+                <button id="btn-format-spiffs" class="btn-danger">🗑️ Форматировать SPIFFS</button>
+                <button id="btn-reboot" class="btn-warning">🔁 Перезагрузить</button>
+            </div>
+            <div class="settings-section">
+                <h3>Modbus (в разработке)</h3>
+                <p class="placeholder">Настройки Modbus будут добавлены позже</p>
+            </div>
+        </div>
+
+        <!-- Вкладка 5: Документация -->
+        <div id="tab-docs" class="tab-content">
+            <div class="docs-layout">
+                <div class="api-reference">
+                    <h3>API Функций</h3>
+                    <div class="api-item">
+                        <code>RL0(value)</code>
+                        <p>Управление реле 0. value: 1 (вкл) или 0 (выкл)</p>
+                    </div>
+                    <div class="api-item">
+                        <code>IN0()</code>
+                        <p>Чтение входа 0. Возвращает true/false</p>
+                    </div>
+                    <div class="api-item">
+                        <code>delay(ms)</code>
+                        <p>Задержка в миллисекундах</p>
+                    </div>
+                    <div class="api-item">
+                        <code>wdt_feed()</code>
+                        <p>Сброс сторожевого таймера</p>
+                    </div>
+                    <div class="api-item">
+                        <code>print(...)</code>
+                        <p>Вывод в терминал</p>
+                    </div>
+                </div>
+                <div class="prompt-section">
+                    <h3>Промт для нейросетей</h3>
+                    <textarea id="ai-prompt" readonly rows="20">Ты — эксперт по встраиваемым системам и языку Lua. Пиши Lua-скрипты для IoT-контроллера на базе ESP32.
+
+## 🛠️ Доступные команды
+
+### Реле (8 каналов, RL0 — RL7)
+- `RL0(1)` — включить реле 0
+- `RL0(0)` — выключить реле 0
+- `state = RL0()` — прочитать состояние (вернёт true/false)
+- То же для RL1, RL2 ... RL7
+
+### Входы (8 каналов, IN0 — IN7)
+- `state = IN0()` — прочитать вход (вернёт true/false)
+- То же для IN1, IN2 ... IN7
+- Входы только читаются, записать в них нельзя
+
+### Задержка
+- `delay(1000)` — пауза 1000 мс (1 секунда)
+- Обязательно использовать вместо циклов ожидания
+
+### Сброс сторожевого таймера
+- `wdt_feed()` — вызвать внутри длительных циклов, иначе скрипт будет убит через 60 секунд
+
+### Вывод в терминал
+- `print("текст")` — выводит в веб-терминал и в UART
+
+## ️ Правила
+
+1. В циклах всегда вызывай `wdt_feed()` и `delay()`. Без них скрипт упадёт.
+2. Нельзя использовать: `os.execute()`, `io.open()`, `require()`, бесконечные циклы без `delay()`.
+3. Скрипт выполняется один раз. Для постоянной работы — цикл `while true do ... end`.
+4. Одновременно может работать только один скрипт.
+
+## 🎯 Задание
+
+[ЗДЕСЬ ОПИСЫВАЙ, ЧТО НУЖНО НАПИСАТЬ]
+
+Напиши готовый Lua-скрипт с комментариями на русском. Используй только команды из списка выше.</textarea>
+                    <button id="btn-copy-prompt" class="btn-primary">📋 Скопировать промт</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Модальное окно подтверждения -->
+    <div id="modal-confirm" class="modal hidden">
+        <div class="modal-content">
+            <h3>Подтверждение</h3>
+            <p id="modal-message">Вы уверены?</p>
+            <div class="modal-buttons">
+                <button id="modal-cancel" class="btn-small">Отмена</button>
+                <button id="modal-ok" class="btn-danger">Подтвердить</button>
             </div>
         </div>
     </div>
 
-    <!-- Подключаем внешний скрипт -->
     <script src="/script.js"></script>
 </body>
 </html>

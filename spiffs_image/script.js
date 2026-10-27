@@ -1,48 +1,84 @@
+// Глобальные переменные
 let ws = null;
 let reconnectTimer = null;
-let currentRunningFile = null;
+let activeFile = null;
+let files = [];
+let autoScroll = true;
+
+// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+document.addEventListener('DOMContentLoaded', () => {
+    initTabs();
+    initWebSocket();
+    initFileList();
+    initTerminal();
+    initMonitor();
+    initSettings();
+    initDocs();
+});
+
+// ==================== ВКЛАДКИ ====================
+function initTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.dataset.tab;
+            switchTab(tabId);
+        });
+    });
+}
+
+function switchTab(tabId) {
+    // Скрыть все вкладки
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Показать выбранную
+    document.getElementById(`tab-${tabId}`).classList.add('active');
+    document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+    
+    // Специфичная логика для вкладок
+    if (tabId === 'editor' && activeFile) {
+        loadFileToEditor(activeFile);
+    }
+}
 
 // ==================== WEBSOCKET ====================
+function initWebSocket() {
+    connectWebSocket();
+}
+
 function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         return;
     }
     
     const wsUrl = `ws://${window.location.hostname}/ws`;
-    console.log('Connecting to WebSocket:', wsUrl);
-    
     ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
         console.log('WebSocket connected');
-        appendLog('🔌 WebSocket подключён', 'system');
-        
-        // Запрашиваем список скриптов и текущий статус
-        loadScripts();
-        loadCurrentStatus();
+        document.getElementById('ws-status').textContent = '🟢 Подключено';
+        document.getElementById('ws-status').classList.add('connected');
+        loadFiles();
     };
     
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            
-            if (data.type === 'log') {
-                appendLog(data.data, 'auto');
-            }
-            else if (data.type === 'status') {
-                handleStatusUpdate(data);
-            }
-            else if (data.type === 'error') {
-                appendLog('❌ ' + (data.message || 'Ошибка'), 'error');
-            }
+            handleWSMessage(data);
         } catch (e) {
-            console.error('Failed to parse WebSocket message:', e);
+            console.error('Failed to parse WS message:', e);
         }
     };
     
     ws.onclose = () => {
         console.log('WebSocket disconnected');
-        appendLog('️ WebSocket отключён, переподключение...', 'warning');
+        document.getElementById('ws-status').textContent = '🔴 Отключено';
+        document.getElementById('ws-status').classList.remove('connected');
         
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connectWebSocket, 3000);
@@ -53,154 +89,93 @@ function connectWebSocket() {
     };
 }
 
-function sendWebSocketCommand(cmd) {
+function handleWSMessage(data) {
+    if (data.type === 'log') {
+        appendLog(data.data, 'auto');
+    }
+    else if (data.type === 'status') {
+        handleStatusUpdate(data);
+    }
+}
+
+function sendWS(cmd) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(cmd);
-    } else {
-        appendLog('❌ WebSocket не подключён', 'error');
     }
 }
 
-// ==================== УПРАВЛЕНИЕ СКРИПТАМИ ====================
-async function loadScripts() {
+// ==================== ФАЙЛЫ ====================
+function initFileList() {
+    document.getElementById('btn-upload').addEventListener('click', () => {
+        document.getElementById('file-input').click();
+    });
+    
+    document.getElementById('file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) uploadFile(file);
+    });
+}
+
+async function loadFiles() {
     try {
         const response = await fetch('/api/scripts');
-        if (!response.ok) throw new Error('Network response was not ok');
-        const scripts = await response.json();
-        
-        const listDiv = document.getElementById('script-list');
-        listDiv.innerHTML = '';
-        
-        if (scripts.length === 0) {
-            listDiv.innerHTML = '<p style="text-align:center; color:#888;">Папка /scripts пуста</p>';
-            return;
-        }
-
-        scripts.forEach(file => {
-            const item = document.createElement('div');
-            item.className = 'script-item';
-            
-            const nameSpan = document.createElement('span');
-            nameSpan.textContent = '📜 ' + file;
-            
-            const btn = document.createElement('button');
-            btn.className = 'btn run';
-            btn.textContent = '▶ Запустить';
-            btn.id = 'btn-' + file;
-            btn.onclick = () => runScript(file, btn);
-            
-            item.appendChild(nameSpan);
-            item.appendChild(btn);
-            listDiv.appendChild(item);
-        });
+        files = await response.json();
+        renderFileList();
     } catch (error) {
-        document.getElementById('script-list').innerHTML = 
-            '<p style="color:#ff5555; text-align:center;">Ошибка загрузки: ' + error.message + '</p>';
+        console.error('Failed to load files:', error);
     }
 }
 
-function runScript(filename, btnElement) {
-    currentRunningFile = filename;
-    btnElement.disabled = true;
-    btnElement.textContent = '⏳ Выполняется...';
-    updateStatus('running', 'Выполнение: ' + filename);
-    document.getElementById('stop-btn').style.display = 'inline-block';
+function renderFileList() {
+    const listDiv = document.getElementById('file-list');
+    listDiv.innerHTML = '';
     
-    sendWebSocketCommand('run:' + filename);
-}
-
-async function stopScript() {
-    sendWebSocketCommand('stop');
-}
-
-// Обработка обновления статуса
-function handleStatusUpdate(data) {
-    if (data.state === 'idle') {
-        updateStatus('idle', 'Готов к работе');
-        appendLog('✅ ' + (data.message || 'Скрипт завершён'), 'info');
-        
-        // Разблокировать все кнопки запуска
-        document.querySelectorAll('.btn.run').forEach(btn => {
-            if (btn.id !== 'upload-btn') {
-                btn.disabled = false;
-                btn.textContent = '▶ Запустить';
-            }
-        });
-        document.getElementById('stop-btn').style.display = 'none';
-        currentRunningFile = null;
-    }
-    else if (data.state === 'watchdog_timeout') {
-        updateStatus('error', 'Превышен таймаут watchdog');
-        appendLog(' ' + (data.message || 'Watchdog timeout'), 'warning');
-        
-        document.querySelectorAll('.btn.run').forEach(btn => {
-            if (btn.id !== 'upload-btn') {
-                btn.disabled = false;
-                btn.textContent = '▶ Запустить';
-            }
-        });
-        document.getElementById('stop-btn').style.display = 'none';
-        currentRunningFile = null;
-    }
-    else if (data.state === 'crashed') {
-        updateStatus('error', 'Скрипт упал с ошибкой');
-        appendLog('💥 ' + (data.message || 'Script crashed'), 'error');
-        
-        document.querySelectorAll('.btn.run').forEach(btn => {
-            if (btn.id !== 'upload-btn') {
-                btn.disabled = false;
-                btn.textContent = '▶ Запустить';
-            }
-        });
-        document.getElementById('stop-btn').style.display = 'none';
-        currentRunningFile = null;
-    }
-    else if (data.state === 'memory_error') {
-        updateStatus('error', 'Недостаточно памяти');
-        appendLog('💾 ' + (data.message || 'Memory error'), 'error');
-    }
-}
-
-// Загрузка текущего статуса при подключении
-async function loadCurrentStatus() {
-    try {
-        const response = await fetch('/api/status');
-        const result = await response.json();
-        
-        if (result.status === 'running') {
-            updateStatus('running', 'Выполняется скрипт');
-            document.getElementById('stop-btn').style.display = 'inline-block';
-        } else {
-            updateStatus('idle', 'Готов к работе');
-        }
-    } catch (error) {
-        console.error('Failed to load status:', error);
-    }
-}
-
-// ==================== ЗАГРУЗКА ФАЙЛОВ ====================
-document.getElementById('file-input').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (file) {
-        document.getElementById('file-name').textContent = file.name + ' (' + file.size + ' bytes)';
-        document.getElementById('upload-btn').disabled = false;
-        document.getElementById('upload-status').style.display = 'none';
-    }
-});
-
-async function uploadFile() {
-    const fileInput = document.getElementById('file-input');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        showUploadStatus('Выберите файл', 'error');
+    if (files.length === 0) {
+        listDiv.innerHTML = '<p class="placeholder">Нет файлов</p>';
         return;
     }
     
-    const uploadBtn = document.getElementById('upload-btn');
-    uploadBtn.disabled = true;
-    uploadBtn.textContent = '⏳ Загрузка...';
-    
+    files.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = (file === activeFile);
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+                // Снять галочки с других
+                document.querySelectorAll('.file-item input[type="checkbox"]').forEach(cb => {
+                    if (cb !== checkbox) cb.checked = false;
+                });
+                activeFile = file;
+                document.getElementById('active-file-label').textContent = `Файл: ${file}`;
+            } else {
+                activeFile = null;
+                document.getElementById('active-file-label').textContent = 'Файл не выбран';
+            }
+        });
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'file-name';
+        nameSpan.textContent = file;
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn-delete';
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            confirmDelete(file);
+        });
+        
+        item.appendChild(checkbox);
+        item.appendChild(nameSpan);
+        item.appendChild(deleteBtn);
+        listDiv.appendChild(item);
+    });
+}
+
+async function uploadFile(file) {
     try {
         const response = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
             method: 'POST',
@@ -208,34 +183,50 @@ async function uploadFile() {
             body: file
         });
         
-        const result = await response.json();
-        
-        if (response.ok && result.status === 'success') {
-            showUploadStatus('✅ Файл загружен (' + result.size + ' bytes)', 'success');
-            fileInput.value = '';
-            document.getElementById('file-name').textContent = 'Файл не выбран';
-            document.getElementById('upload-btn').disabled = true;
-            loadScripts();
+        if (response.ok) {
+            appendLog(`✅ Файл загружен: ${file.name}`, 'info');
+            loadFiles();
         } else {
-            showUploadStatus('❌ Ошибка: ' + (result.message || 'Неизвестная ошибка'), 'error');
+            appendLog(`❌ Ошибка загрузки: ${file.name}`, 'error');
         }
     } catch (error) {
-        showUploadStatus('❌ Ошибка сети: ' + error.message, 'error');
-    } finally {
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = '⬆️ Загрузить';
+        appendLog(`❌ Ошибка сети: ${error.message}`, 'error');
     }
 }
 
-function showUploadStatus(message, type) {
-    const statusDiv = document.getElementById('upload-status');
-    statusDiv.textContent = message;
-    statusDiv.className = type;
-    statusDiv.style.display = 'block';
-    setTimeout(() => { statusDiv.style.display = 'none'; }, 5000);
+function confirmDelete(filename) {
+    showModal(`Удалить файл ${filename}?`, async () => {
+        // TODO: API удаления файла
+        appendLog(`🗑️ Файл удалён: ${filename}`, 'info');
+        loadFiles();
+    });
 }
 
 // ==================== ТЕРМИНАЛ ====================
+function initTerminal() {
+    document.getElementById('btn-clear').addEventListener('click', () => {
+        document.getElementById('terminal-output').innerHTML = '';
+        sendWS('clear_logs');
+    });
+    
+    document.getElementById('btn-autoscroll').addEventListener('click', (e) => {
+        autoScroll = !autoScroll;
+        e.target.classList.toggle('active', autoScroll);
+    });
+    
+    document.getElementById('btn-run').addEventListener('click', () => {
+        if (activeFile) {
+            sendWS(`run:${activeFile}`);
+        } else {
+            appendLog('⚠️ Выберите файл', 'warning');
+        }
+    });
+    
+    document.getElementById('btn-stop').addEventListener('click', () => {
+        sendWS('stop');
+    });
+}
+
 function appendLog(text, type = 'info') {
     const terminal = document.getElementById('terminal-output');
     const lines = text.split('\n');
@@ -250,27 +241,114 @@ function appendLog(text, type = 'info') {
                     finalType = 'lua';
                 }
             }
-            div.className = 'log-line log-' + finalType;
+            div.className = `log-line log-${finalType}`;
             div.textContent = line;
             terminal.appendChild(div);
         }
     });
-    terminal.scrollTop = terminal.scrollHeight;
+    if (autoScroll) {
+        terminal.scrollTop = terminal.scrollHeight;
+    }
 }
 
-function updateStatus(state, text) {
-    document.getElementById('status-dot').className = 'status-dot ' + state;
-    document.getElementById('status-text').textContent = text;
+function handleStatusUpdate(data) {
+    if (data.state === 'idle') {
+        document.getElementById('task-status').textContent = 'Готов к работе';
+    } else if (data.state === 'running') {
+        document.getElementById('task-status').textContent = `Выполняется: ${data.message || ''}`;
+    }
 }
 
-async function clearTerminal() {
-    sendWebSocketCommand('clear_logs');
-    document.getElementById('terminal-output').innerHTML = '<div class="log-line log-system">Терминал очищен</div>';
+// ==================== МОНИТОР ====================
+function initMonitor() {
+    // Генерация индикаторов реле
+    const relayGrid = document.getElementById('relay-indicators');
+    for (let i = 0; i < 8; i++) {
+        const item = document.createElement('div');
+        item.className = 'io-item';
+        item.innerHTML = `
+            <div class="io-indicator" id="relay-${i}"></div>
+            <div>RL${i}</div>
+        `;
+        relayGrid.appendChild(item);
+    }
+    
+    // Генерация кнопок входов
+    const inputGrid = document.getElementById('input-buttons');
+    for (let i = 0; i < 8; i++) {
+        const item = document.createElement('div');
+        item.className = 'io-item';
+        item.innerHTML = `
+            <button class="io-button" id="input-${i}" data-index="${i}">IN${i}</button>
+        `;
+        inputGrid.appendChild(item);
+    }
+    
+    // Обработчики кнопок входов
+    document.querySelectorAll('.io-button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const index = btn.dataset.index;
+            btn.classList.toggle('active');
+            // TODO: Отправить команду на ESP32
+            appendLog(` Вход IN${index} переключён`, 'info');
+        });
+    });
+    
+    document.getElementById('btn-reset-io').addEventListener('click', () => {
+        document.querySelectorAll('.io-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        appendLog('🔄 Ручное управление сброшено', 'info');
+    });
 }
 
-async function refreshLogs() {
-    appendLog('🔄 Обновление не требуется (WebSocket активен)', 'system');
+// ==================== НАСТРОЙКИ ====================
+function initSettings() {
+    document.getElementById('btn-save-wifi').addEventListener('click', () => {
+        appendLog('💾 Wi-Fi настройки сохранены (TODO)', 'info');
+    });
+    
+    document.getElementById('btn-format-spiffs').addEventListener('click', () => {
+        showModal('Форматировать SPIFFS? Все файлы будут удалены!', () => {
+            appendLog('🗑️ SPIFFS форматирование (TODO)', 'warning');
+        });
+    });
+    
+    document.getElementById('btn-reboot').addEventListener('click', () => {
+        showModal('Перезагрузить контроллер?', () => {
+            appendLog('🔁 Перезагрузка (TODO)', 'warning');
+        });
+    });
 }
 
-// Запуск при загрузке страницы
-connectWebSocket();
+// ==================== ДОКУМЕНТАЦИЯ ====================
+function initDocs() {
+    document.getElementById('btn-copy-prompt').addEventListener('click', () => {
+        const promptText = document.getElementById('ai-prompt').value;
+        navigator.clipboard.writeText(promptText).then(() => {
+            appendLog('📋 Промт скопирован в буфер обмена', 'info');
+        });
+    });
+}
+
+// ==================== МОДАЛЬНОЕ ОКНО ====================
+function showModal(message, onConfirm) {
+    const modal = document.getElementById('modal-confirm');
+    document.getElementById('modal-message').textContent = message;
+    modal.classList.remove('hidden');
+    
+    document.getElementById('modal-ok').onclick = () => {
+        modal.classList.add('hidden');
+        if (onConfirm) onConfirm();
+    };
+    
+    document.getElementById('modal-cancel').onclick = () => {
+        modal.classList.add('hidden');
+    };
+}
+
+// ==================== ЗАГЛУШКИ ====================
+function loadFileToEditor(filename) {
+    // TODO: Загрузить содержимое файла в CodeMirror
+    appendLog(`📝 Загрузка файла ${filename} в редактор (TODO)`, 'info');
+}
