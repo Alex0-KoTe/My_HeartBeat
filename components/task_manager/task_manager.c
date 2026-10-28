@@ -37,6 +37,7 @@ static int log_write_pos = 0;
 static SemaphoreHandle_t log_mutex = NULL;
 
 void task_manager_log(const char* fmt, ...) {
+    ESP_LOGW(TAG, "task_manager_log CALLED: mutex=%p", log_mutex);
     if (log_mutex == NULL) return;
     
     char temp[512];

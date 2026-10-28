@@ -67,6 +67,7 @@ function connectWebSocket() {
     };
     
     ws.onmessage = (event) => {
+        console.log('📩 Получено сообщение:', event.data);
         try {
             const data = JSON.parse(event.data);
             handleWSMessage(data);
