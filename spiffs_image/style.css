@@ -554,3 +554,48 @@ body {
     color: #969696;
     font-size: 13px;
 }
+/* ============================================================================
+   Настройки высоты для CodeMirror (растягивание на весь экран)
+   ============================================================================ */
+
+/* 1. Гарантируем, что страница занимает всю высоту окна браузера */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Предотвращаем двойную полосу прокрутки */
+}
+
+/* 2. Вкладка "Редактор" должна использовать Flexbox и занимать 100% высоты */
+#tab-editor {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 3. Контейнер, в который мы вставляем редактор, забирает всё свободное место */
+#editor-container {
+    flex: 1; /* Растягивается на всю доступную высоту */
+    height: 100%;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+/* 4. Принудительное растягивание самого CodeMirror (перебиваем его дефолтные стили) */
+.CodeMirror {
+    height: 100% !important;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    border: none;
+}
+
+/* Стили для заглушки загрузки, чтобы она была по центру */
+.editor-placeholder {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #969696;
+    font-size: 16px;
+}

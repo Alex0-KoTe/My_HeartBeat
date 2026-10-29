@@ -536,7 +536,7 @@ static esp_err_t api_status_handler(httpd_req_t *req) {
 // ============================================================================
 esp_err_t web_server_start(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 15;
+    config.max_uri_handlers = 25;
     config.stack_size = 8192;
     config.max_open_sockets = 7;
     
@@ -547,11 +547,18 @@ esp_err_t web_server_start(void) {
     
     ws_server_handle = server;
     
-    // Статические файлы
+        // Статические файлы
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/style.css", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/script.js", .method=HTTP_GET, .handler=file_handler});
     
+    // === CodeMirror 5 (автономно, навсегда) ===
+    httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/core.js", .method=HTTP_GET, .handler=file_handler});
+    httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/core.css", .method=HTTP_GET, .handler=file_handler});
+    httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/lua.js", .method=HTTP_GET, .handler=file_handler});
+    httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/brackets.js", .method=HTTP_GET, .handler=file_handler});
+    httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/monokai.css", .method=HTTP_GET, .handler=file_handler});
+    // ============================================
     // API
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/scripts", .method=HTTP_GET, .handler=api_scripts_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/upload", .method=HTTP_POST, .handler=api_upload_handler});

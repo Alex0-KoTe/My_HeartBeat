@@ -1,13 +1,26 @@
-// Глобальные переменные
+// ============================================================================
+// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+// ============================================================================
 let ws = null;
 let reconnectTimer = null;
 let activeFile = null;
 let files = [];
 let autoScroll = true;
 
-// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+// Переменные для CodeMirror
+let editor = null;
+let isCodeMirrorLoading = false;
+let isCodeMirrorLoaded = false;
+
+// Переменные для polling логов
+let lastLogLength = 0;
+let logPollingInterval = null;
+
+// ============================================================================
+// ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ СТРАНИЦЫ
+// ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Читаем сохранённые состояния из LocalStorage
+    // Читаем сохранённые состояния из LocalStorage
     const savedTab = localStorage.getItem('activeTab') || 'workspace';
     const savedFile = localStorage.getItem('activeFile');
 
@@ -15,11 +28,12 @@ document.addEventListener('DOMContentLoaded', () => {
         activeFile = savedFile;
     }
 
-    // 2. Инициализируем модули
-    initTabs(); 
+    // Инициализируем модули
+    initTabs();
     
-    // 3. Переключаемся на сохранённую вкладку (это также отрисует UI)
+    // Переключаемся на сохранённую вкладку
     switchTab(savedTab);
+    
     initWebSocket();
     initFileList();
     initTerminal();
@@ -28,7 +42,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initDocs();
 });
 
-// ==================== ВКЛАДКИ ====================
+// ============================================================================
+// ВКЛАДКИ
+// ============================================================================
 function initTabs() {
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach(btn => {
@@ -55,16 +71,117 @@ function switchTab(tabId) {
     if (targetTab) targetTab.classList.add('active');
     if (targetBtn) targetBtn.classList.add('active');
     
-    // === НОВОЕ: Сохраняем выбор в LocalStorage ===
+    // Сохраняем выбор в LocalStorage
     localStorage.setItem('activeTab', tabId);
     
-    // Специфичная логика для вкладок
-    if (tabId === 'editor' && activeFile) {
-        loadFileToEditor(activeFile);
+    // Логика для вкладки Редактора
+    if (tabId === 'editor') {
+        const container = document.getElementById('editor-container');
+        
+        if (!isCodeMirrorLoaded && !isCodeMirrorLoading) {
+            container.innerHTML = '<div class="editor-placeholder">⏳ Загрузка редактора кода...</div>';
+        }
+
+        loadCodeMirrorAssets()
+            .then(() => {
+                initCodeMirrorEditor();
+                if (editor) {
+                    setTimeout(() => editor.refresh(), 100);
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка загрузки CodeMirror:', err);
+                container.innerHTML = '<div class="editor-placeholder" style="color:red">❌ Ошибка загрузки редактора</div>';
+            });
     }
 }
 
-// ==================== WEBSOCKET ====================
+// ============================================================================
+// ЛЕНИВАЯ ЗАГРУЗКА CODEMIRROR 5 (с темой Monokai)
+// ============================================================================
+function loadCodeMirrorAssets() {
+    return new Promise((resolve, reject) => {
+        if (isCodeMirrorLoaded) {
+            resolve();
+            return;
+        }
+        if (isCodeMirrorLoading) {
+            const interval = setInterval(() => {
+                if (isCodeMirrorLoaded) {
+                    clearInterval(interval);
+                    resolve();
+                }
+            }, 100);
+            return;
+        }
+
+        isCodeMirrorLoading = true;
+
+        // Загружаем CSS (базовый + тема Monokai)
+        const cssLink = document.createElement('link');
+        cssLink.rel = 'stylesheet';
+        cssLink.href = '/cm/core.css';
+        document.head.appendChild(cssLink);
+
+        const themeLink = document.createElement('link');
+        themeLink.rel = 'stylesheet';
+        themeLink.href = '/cm/monokai.css';
+        document.head.appendChild(themeLink);
+
+        // Загружаем JS файлы
+        const scripts = [
+            '/cm/core.js',
+            '/cm/lua.js',
+            '/cm/brackets.js'
+        ];
+
+        let loadedCount = 0;
+        scripts.forEach(src => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => {
+                loadedCount++;
+                if (loadedCount === scripts.length) {
+                    isCodeMirrorLoaded = true;
+                    isCodeMirrorLoading = false;
+                    resolve();
+                }
+            };
+            script.onerror = () => {
+                isCodeMirrorLoading = false;
+                reject(new Error(`Failed to load ${src}`));
+            };
+            document.body.appendChild(script);
+        });
+    });
+}
+
+function initCodeMirrorEditor() {
+    if (editor) return;
+
+    const container = document.getElementById('editor-container');
+    container.innerHTML = '';
+
+    const textarea = document.createElement('textarea');
+    textarea.id = 'code-editor-area';
+    container.appendChild(textarea);
+
+    editor = CodeMirror.fromTextArea(textarea, {
+        mode: 'lua',
+        lineNumbers: true,
+        autoCloseBrackets: true,
+        indentUnit: 4,
+        tabSize: 4,
+        lineWrapping: true,
+        theme: 'monokai'  // Тёмная тема Monokai
+    });
+
+    editor.setValue('-- Редактор готов к работе!\n-- Выберите файл во вкладке "Рабочая область"\n\nlocal x = 42\nprint("Hello from Lua!")');
+}
+
+// ============================================================================
+// WEBSOCKET
+// ============================================================================
 function initWebSocket() {
     connectWebSocket();
 }
@@ -88,9 +205,10 @@ function connectWebSocket() {
         console.log('📩 Получено сообщение:', event.data);
         try {
             const data = JSON.parse(event.data);
+            console.log('✅ Распарсено:', data);
             handleWSMessage(data);
         } catch (e) {
-            console.error('Failed to parse WS message:', e);
+            console.error('❌ Ошибка парсинга:', e, 'Данные:', event.data);
         }
     };
     
@@ -123,7 +241,9 @@ function sendWS(cmd) {
     }
 }
 
-// ==================== ФАЙЛЫ ====================
+// ============================================================================
+// ФАЙЛЫ
+// ============================================================================
 function initFileList() {
     document.getElementById('btn-upload').addEventListener('click', () => {
         document.getElementById('file-input').click();
@@ -161,22 +281,17 @@ function renderFileList() {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = (file === activeFile);
-                checkbox.addEventListener('change', () => {
+        checkbox.addEventListener('change', () => {
             if (checkbox.checked) {
-                // Снять галочки с других
                 document.querySelectorAll('.file-item input[type="checkbox"]').forEach(cb => {
                     if (cb !== checkbox) cb.checked = false;
                 });
                 activeFile = file;
                 document.getElementById('active-file-label').textContent = `Файл: ${file}`;
-                
-                // === НОВОЕ: Сохраняем активный файл ===
                 localStorage.setItem('activeFile', file);
             } else {
                 activeFile = null;
                 document.getElementById('active-file-label').textContent = 'Файл не выбран';
-                
-                // === НОВОЕ: Удаляем из памяти ===
                 localStorage.removeItem('activeFile');
             }
         });
@@ -201,6 +316,12 @@ function renderFileList() {
 }
 
 async function uploadFile(file) {
+    if (!file.name.endsWith('.lua')) {
+        appendLog(`❌ Файл ${file.name} не является Lua-скриптом (.lua)`, 'error');
+        document.getElementById('file-input').value = '';
+        return;
+    }
+    
     try {
         const response = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
             method: 'POST',
@@ -208,14 +329,18 @@ async function uploadFile(file) {
             body: file
         });
         
-        if (response.ok) {
-            appendLog(`✅ Файл загружен: ${file.name}`, 'info');
+        const result = await response.json();
+        
+        if (response.ok && result.status === 'success') {
+            appendLog(`✅ Файл загружен: ${file.name} (${result.size} bytes)`, 'info');
             loadFiles();
         } else {
-            appendLog(`❌ Ошибка загрузки: ${file.name}`, 'error');
+            appendLog(`❌ Ошибка загрузки: ${result.message || 'Unknown error'}`, 'error');
         }
     } catch (error) {
         appendLog(`❌ Ошибка сети: ${error.message}`, 'error');
+    } finally {
+        document.getElementById('file-input').value = '';
     }
 }
 
@@ -231,14 +356,13 @@ function confirmDelete(filename) {
             if (response.ok && result.status === 'success') {
                 appendLog(`🗑️ Файл удалён: ${filename}`, 'info');
                 
-                // Если удалили активный файл, сбрасываем выбор и чистим LocalStorage
                 if (activeFile === filename) {
                     activeFile = null;
                     localStorage.removeItem('activeFile');
                     document.getElementById('active-file-label').textContent = 'Файл не выбран';
                 }
                 
-                loadFiles(); // Обновляем список
+                loadFiles();
             } else {
                 appendLog(`❌ Ошибка удаления: ${result.message}`, 'error');
             }
@@ -248,11 +372,18 @@ function confirmDelete(filename) {
     });
 }
 
-// ==================== ТЕРМИНАЛ ====================
+// ============================================================================
+// ТЕРМИНАЛ
+// ============================================================================
 function initTerminal() {
-    document.getElementById('btn-clear').addEventListener('click', () => {
-        document.getElementById('terminal-output').innerHTML = '';
-        sendWS('clear_logs');
+    document.getElementById('btn-clear').addEventListener('click', async () => {
+        document.getElementById('terminal-output').innerHTML = '<div class="log-line log-system">Терминал очищен</div>';
+        lastLogLength = 0;
+        try {
+            await fetch('/api/logs/clear');
+        } catch (error) {
+            console.error('Failed to clear logs:', error);
+        }
     });
     
     document.getElementById('btn-autoscroll').addEventListener('click', (e) => {
@@ -260,17 +391,61 @@ function initTerminal() {
         e.target.classList.toggle('active', autoScroll);
     });
     
-    document.getElementById('btn-run').addEventListener('click', () => {
+    document.getElementById('btn-run').addEventListener('click', async () => {
         if (activeFile) {
-            sendWS(`run:${activeFile}`);
+            try {
+                const response = await fetch(`/api/run?file=${encodeURIComponent(activeFile)}`);
+                const result = await response.json();
+                
+                if (response.ok && result.status === 'success') {
+                    appendLog(`✅ Запуск: ${activeFile}`, 'info');
+                    startLogPolling();
+                } else {
+                    appendLog(`❌ Ошибка запуска: ${result.message || 'Unknown'}`, 'error');
+                }
+            } catch (error) {
+                appendLog(`❌ Ошибка сети: ${error.message}`, 'error');
+            }
         } else {
             appendLog('⚠️ Выберите файл', 'warning');
         }
     });
     
-    document.getElementById('btn-stop').addEventListener('click', () => {
-        sendWS('stop');
+    document.getElementById('btn-stop').addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/stop');
+            const result = await response.json();
+            
+            if (response.ok) {
+                appendLog('⏹ Скрипт остановлен', 'info');
+            } else {
+                appendLog('⚠️ Нет активного скрипта', 'warning');
+            }
+        } catch (error) {
+            appendLog(`❌ Ошибка остановки: ${error.message}`, 'error');
+        }
     });
+    
+    startLogPolling();
+}
+
+function startLogPolling() {
+    if (logPollingInterval) clearInterval(logPollingInterval);
+    
+    logPollingInterval = setInterval(async () => {
+        try {
+            const response = await fetch('/api/logs');
+            const logs = await response.text();
+            
+            if (logs.length > lastLogLength) {
+                const newLogs = logs.substring(lastLogLength);
+                appendLog(newLogs, 'auto');
+                lastLogLength = logs.length;
+            }
+        } catch (error) {
+            // Тихая ошибка
+        }
+    }, 300);
 }
 
 function appendLog(text, type = 'info') {
@@ -305,9 +480,10 @@ function handleStatusUpdate(data) {
     }
 }
 
-// ==================== МОНИТОР ====================
+// ============================================================================
+// МОНИТОР
+// ============================================================================
 function initMonitor() {
-    // Генерация индикаторов реле
     const relayGrid = document.getElementById('relay-indicators');
     for (let i = 0; i < 8; i++) {
         const item = document.createElement('div');
@@ -319,7 +495,6 @@ function initMonitor() {
         relayGrid.appendChild(item);
     }
     
-    // Генерация кнопок входов
     const inputGrid = document.getElementById('input-buttons');
     for (let i = 0; i < 8; i++) {
         const item = document.createElement('div');
@@ -330,13 +505,11 @@ function initMonitor() {
         inputGrid.appendChild(item);
     }
     
-    // Обработчики кнопок входов
     document.querySelectorAll('.io-button').forEach(btn => {
         btn.addEventListener('click', () => {
             const index = btn.dataset.index;
             btn.classList.toggle('active');
-            // TODO: Отправить команду на ESP32
-            appendLog(` Вход IN${index} переключён`, 'info');
+            appendLog(`🔘 Вход IN${index} переключён`, 'info');
         });
     });
     
@@ -348,10 +521,12 @@ function initMonitor() {
     });
 }
 
-// ==================== НАСТРОЙКИ ====================
+// ============================================================================
+// НАСТРОЙКИ
+// ============================================================================
 function initSettings() {
     document.getElementById('btn-save-wifi').addEventListener('click', () => {
-        appendLog('💾 Wi-Fi настройки сохранены (TODO)', 'info');
+        appendLog('📡 Wi-Fi настройки сохранены (TODO)', 'info');
     });
     
     document.getElementById('btn-format-spiffs').addEventListener('click', () => {
@@ -367,17 +542,47 @@ function initSettings() {
     });
 }
 
-// ==================== ДОКУМЕНТАЦИЯ ====================
+// ============================================================================
+// ДОКУМЕНТАЦИЯ
+// ============================================================================
 function initDocs() {
     document.getElementById('btn-copy-prompt').addEventListener('click', () => {
         const promptText = document.getElementById('ai-prompt').value;
-        navigator.clipboard.writeText(promptText).then(() => {
-            appendLog('📋 Промт скопирован в буфер обмена', 'info');
-        });
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(promptText).then(() => {
+                appendLog('📋 Промт скопирован в буфер обмена', 'info');
+            }).catch(err => {
+                console.error('Clipboard API failed:', err);
+                fallbackCopy(promptText);
+            });
+        } else {
+            fallbackCopy(promptText);
+        }
     });
 }
 
-// ==================== МОДАЛЬНОЕ ОКНО ====================
+function fallbackCopy(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
+        appendLog('📋 Промт скопирован в буфер обмена', 'info');
+    } catch (err) {
+        appendLog('❌ Не удалось скопировать', 'error');
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+// ============================================================================
+// МОДАЛЬНОЕ ОКНО
+// ============================================================================
 function showModal(message, onConfirm) {
     const modal = document.getElementById('modal-confirm');
     document.getElementById('modal-message').textContent = message;
@@ -393,8 +598,9 @@ function showModal(message, onConfirm) {
     };
 }
 
-// ==================== ЗАГЛУШКИ ====================
+// ============================================================================
+// ЗАГЛУШКА ДЛЯ ЗАГРУЗКИ ФАЙЛА В РЕДАКТОР
+// ============================================================================
 function loadFileToEditor(filename) {
-    // TODO: Загрузить содержимое файла в CodeMirror
     appendLog(`📝 Загрузка файла ${filename} в редактор (TODO)`, 'info');
 }
