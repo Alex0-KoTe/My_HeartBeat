@@ -7,7 +7,19 @@ let autoScroll = true;
 
 // ==================== ИНИЦИАЛИЗАЦИЯ ====================
 document.addEventListener('DOMContentLoaded', () => {
-    initTabs();
+    // 1. Читаем сохранённые состояния из LocalStorage
+    const savedTab = localStorage.getItem('activeTab') || 'workspace';
+    const savedFile = localStorage.getItem('activeFile');
+
+    if (savedFile) {
+        activeFile = savedFile;
+    }
+
+    // 2. Инициализируем модули
+    initTabs(); 
+    
+    // 3. Переключаемся на сохранённую вкладку (это также отрисует UI)
+    switchTab(savedTab);
     initWebSocket();
     initFileList();
     initTerminal();
@@ -28,7 +40,7 @@ function initTabs() {
 }
 
 function switchTab(tabId) {
-    // Скрыть все вкладки
+    // Скрыть все вкладки и деактивировать кнопки
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
@@ -37,8 +49,14 @@ function switchTab(tabId) {
     });
     
     // Показать выбранную
-    document.getElementById(`tab-${tabId}`).classList.add('active');
-    document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+    const targetTab = document.getElementById(`tab-${tabId}`);
+    const targetBtn = document.querySelector(`[data-tab="${tabId}"]`);
+    
+    if (targetTab) targetTab.classList.add('active');
+    if (targetBtn) targetBtn.classList.add('active');
+    
+    // === НОВОЕ: Сохраняем выбор в LocalStorage ===
+    localStorage.setItem('activeTab', tabId);
     
     // Специфичная логика для вкладок
     if (tabId === 'editor' && activeFile) {
@@ -143,7 +161,7 @@ function renderFileList() {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = (file === activeFile);
-        checkbox.addEventListener('change', () => {
+                checkbox.addEventListener('change', () => {
             if (checkbox.checked) {
                 // Снять галочки с других
                 document.querySelectorAll('.file-item input[type="checkbox"]').forEach(cb => {
@@ -151,9 +169,15 @@ function renderFileList() {
                 });
                 activeFile = file;
                 document.getElementById('active-file-label').textContent = `Файл: ${file}`;
+                
+                // === НОВОЕ: Сохраняем активный файл ===
+                localStorage.setItem('activeFile', file);
             } else {
                 activeFile = null;
                 document.getElementById('active-file-label').textContent = 'Файл не выбран';
+                
+                // === НОВОЕ: Удаляем из памяти ===
+                localStorage.removeItem('activeFile');
             }
         });
         
@@ -196,10 +220,31 @@ async function uploadFile(file) {
 }
 
 function confirmDelete(filename) {
-    showModal(`Удалить файл ${filename}?`, async () => {
-        // TODO: API удаления файла
-        appendLog(`🗑️ Файл удалён: ${filename}`, 'info');
-        loadFiles();
+    showModal(`Удалить файл ${filename}? Это действие нельзя отменить.`, async () => {
+        try {
+            const response = await fetch(`/api/delete?filename=${encodeURIComponent(filename)}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok && result.status === 'success') {
+                appendLog(`🗑️ Файл удалён: ${filename}`, 'info');
+                
+                // Если удалили активный файл, сбрасываем выбор и чистим LocalStorage
+                if (activeFile === filename) {
+                    activeFile = null;
+                    localStorage.removeItem('activeFile');
+                    document.getElementById('active-file-label').textContent = 'Файл не выбран';
+                }
+                
+                loadFiles(); // Обновляем список
+            } else {
+                appendLog(`❌ Ошибка удаления: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            appendLog(`❌ Ошибка сети при удалении: ${error.message}`, 'error');
+        }
     });
 }
 
