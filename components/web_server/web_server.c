@@ -22,7 +22,6 @@ static int ws_client_count = 0;
 static SemaphoreHandle_t ws_mutex = NULL;
 static httpd_handle_t ws_server_handle = NULL;
 
-// Отправка сообщения всем подключённым WebSocket клиентам через POSIX send()
 void web_server_ws_broadcast(const char* message) {
     ESP_LOGI(TAG, "BROADCAST CALLED: %s", message);
     
@@ -33,14 +32,11 @@ void web_server_ws_broadcast(const char* message) {
     
     xSemaphoreTake(ws_mutex, portMAX_DELAY);
     
-    // Формируем WebSocket-фрейм вручную
     uint8_t frame[2048];
     int frame_len = 0;
     
-    // Byte 0: FIN бит + opcode 0x1 (текстовый фрейм)
     frame[frame_len++] = 0x81;
     
-    // Byte 1+: длина payload
     int msg_len = strlen(message);
     if (msg_len < 126) {
         frame[frame_len++] = msg_len;
@@ -55,7 +51,6 @@ void web_server_ws_broadcast(const char* message) {
         }
     }
     
-    // Копируем payload
     if (frame_len + msg_len < (int)sizeof(frame)) {
         memcpy(&frame[frame_len], message, msg_len);
         frame_len += msg_len;
@@ -65,7 +60,6 @@ void web_server_ws_broadcast(const char* message) {
         return;
     }
     
-    // Отправляем всем клиентам
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
         if (ws_clients[i] != 0) {
             int ret = send(ws_clients[i], frame, frame_len, 0);
@@ -84,12 +78,11 @@ void web_server_ws_broadcast(const char* message) {
 }
 
 // ============================================================================
-// WebSocket Handler (Надёжное отслеживание клиентов)
+// WebSocket Handler
 // ============================================================================
 static esp_err_t ws_handler(httpd_req_t *req) {
     int fd = httpd_req_to_sockfd(req);
 
-    // 1. Надёжное добавление клиента в список по его fd
     xSemaphoreTake(ws_mutex, portMAX_DELAY);
     
     bool found = false;
@@ -113,18 +106,15 @@ static esp_err_t ws_handler(httpd_req_t *req) {
     }
     xSemaphoreGive(ws_mutex);
 
-    // 2. Если это рукопожатие (GET) — просто возвращаем успех
     if (req->method == HTTP_GET) {
         ESP_LOGI(TAG, "WebSocket handshake completed for fd=%d", fd);
         return ESP_OK;
     }
 
-    // 3. Обработка входящих данных
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
 
-    // Этап А: Получаем размер фрейма
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get frame size");
@@ -135,7 +125,6 @@ static esp_err_t ws_handler(httpd_req_t *req) {
         return ESP_OK;
     }
 
-    // Этап Б: Выделяем буфер и получаем данные
     uint8_t *buf = calloc(1, ws_pkt.len + 1);
     if (buf == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory");
@@ -152,7 +141,6 @@ static esp_err_t ws_handler(httpd_req_t *req) {
 
     ESP_LOGI(TAG, "WS received (%d bytes): %.*s", ws_pkt.len, ws_pkt.len, buf);
 
-    // 4. Парсинг команд
     char *cmd = (char *)buf;
     
     if (strncmp(cmd, "run:", 4) == 0) {
@@ -410,7 +398,7 @@ static esp_err_t api_delete_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
-// API: Запуск скрипта (HTTP fallback)
+// API: Запуск скрипта
 // ============================================================================
 static esp_err_t api_run_handler(httpd_req_t *req) {
     char query[256];
@@ -464,7 +452,7 @@ static esp_err_t api_run_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
-// API: Остановка скрипта (HTTP fallback)
+// API: Остановка скрипта
 // ============================================================================
 static esp_err_t api_stop_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "application/json");
@@ -483,7 +471,7 @@ static esp_err_t api_stop_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
-// API: Получение логов (HTTP fallback для polling)
+// API: Получение логов
 // ============================================================================
 static esp_err_t api_logs_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
@@ -532,6 +520,150 @@ static esp_err_t api_status_handler(httpd_req_t *req) {
 }
 
 // ============================================================================
+// API: Чтение содержимого Lua-файла
+// ============================================================================
+static esp_err_t api_read_file_handler(httpd_req_t *req) {
+    char query[256];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Missing filename\"}");
+        return ESP_OK;
+    }
+    
+    char filename[64];
+    if (httpd_query_key_value(query, "filename", filename, sizeof(filename)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Missing filename parameter\"}");
+        return ESP_OK;
+    }
+    
+    if (strstr(filename, "..") != NULL || strstr(filename, "/") != NULL || strstr(filename, ".lua") == NULL) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Invalid filename\"}");
+        return ESP_OK;
+    }
+    
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "/spiffs/scripts/%s", filename);
+    
+    FILE *fp = fopen(filepath, "r");
+    if (fp == NULL) {
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"File not found\"}");
+        return ESP_OK;
+    }
+    
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    char *content = (char *)malloc(file_size + 1);
+    if (content == NULL) {
+        fclose(fp);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Out of memory\"}");
+        return ESP_OK;
+    }
+    
+    size_t read_bytes = fread(content, 1, file_size, fp);
+    content[read_bytes] = '\0';
+    fclose(fp);
+    
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    httpd_resp_send(req, content, read_bytes);
+    
+    free(content);
+    
+    ESP_LOGI(TAG, "Read file: %s (%ld bytes)", filename, file_size);
+    return ESP_OK;
+}
+
+// ============================================================================
+// API: Сохранение Lua-файла
+// ============================================================================
+static esp_err_t api_save_file_handler(httpd_req_t *req) {
+    char query[256];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Missing filename\"}");
+        return ESP_OK;
+    }
+    
+    char filename[64];
+    if (httpd_query_key_value(query, "filename", filename, sizeof(filename)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Missing filename parameter\"}");
+        return ESP_OK;
+    }
+    
+    if (strstr(filename, "..") != NULL || strstr(filename, "/") != NULL || strstr(filename, ".lua") == NULL) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Invalid filename\"}");
+        return ESP_OK;
+    }
+    
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "/spiffs/scripts/%s", filename);
+    
+    size_t content_len = req->content_len;
+    if (content_len == 0 || content_len > 10240) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Invalid content length\"}");
+        return ESP_OK;
+    }
+    
+    char *content = (char *)malloc(content_len + 1);
+    if (content == NULL) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Out of memory\"}");
+        return ESP_OK;
+    }
+    
+    int received = httpd_req_recv(req, content, content_len);
+    if (received <= 0) {
+        free(content);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Failed to receive data\"}");
+        return ESP_OK;
+    }
+    content[received] = '\0';
+    
+    FILE *fp = fopen(filepath, "w");
+    if (fp == NULL) {
+        free(content);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Failed to open file\"}");
+        return ESP_OK;
+    }
+    
+    fwrite(content, 1, received, fp);
+    fclose(fp);
+    free(content);
+    
+    ESP_LOGI(TAG, "Saved file: %s (%d bytes)", filename, received);
+    
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"success\",\"message\":\"File saved\"}");
+    
+    web_server_ws_broadcast("{\"type\":\"status\",\"message\":\"File saved\"}");
+    
+    return ESP_OK;
+}
+
+// ============================================================================
 // Запуск веб-сервера
 // ============================================================================
 esp_err_t web_server_start(void) {
@@ -547,18 +679,18 @@ esp_err_t web_server_start(void) {
     
     ws_server_handle = server;
     
-        // Статические файлы
+    // Статические файлы
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/style.css", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/script.js", .method=HTTP_GET, .handler=file_handler});
     
-    // === CodeMirror 5 (автономно, навсегда) ===
+    // CodeMirror 5
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/core.js", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/core.css", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/lua.js", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/brackets.js", .method=HTTP_GET, .handler=file_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/cm/monokai.css", .method=HTTP_GET, .handler=file_handler});
-    // ============================================
+    
     // API
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/scripts", .method=HTTP_GET, .handler=api_scripts_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/upload", .method=HTTP_POST, .handler=api_upload_handler});
@@ -569,6 +701,10 @@ esp_err_t web_server_start(void) {
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/logs", .method=HTTP_GET, .handler=api_logs_handler});
     httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/logs/clear", .method=HTTP_GET, .handler=api_logs_clear_handler});
     
+    // API для редактора
+    httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/read-file", .method=HTTP_GET, .handler=api_read_file_handler});
+    httpd_register_uri_handler(server, &(httpd_uri_t){.uri="/api/save-file", .method=HTTP_POST, .handler=api_save_file_handler});
+    
     // WebSocket
     httpd_register_uri_handler(server, &(httpd_uri_t){
         .uri = "/ws",
@@ -578,7 +714,6 @@ esp_err_t web_server_start(void) {
         .is_websocket = true
     });
     
-    // Связываем Task Manager с WebSocket
     task_manager_set_event_callback(web_server_ws_broadcast);
     
     ESP_LOGI(TAG, "Web server started with WebSocket support");

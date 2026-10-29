@@ -7,20 +7,17 @@ let activeFile = null;
 let files = [];
 let autoScroll = true;
 
-// Переменные для CodeMirror
 let editor = null;
 let isCodeMirrorLoading = false;
 let isCodeMirrorLoaded = false;
 
-// Переменные для polling логов
 let lastLogLength = 0;
 let logPollingInterval = null;
 
 // ============================================================================
-// ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ СТРАНИЦЫ
+// ИНИЦИАЛИЗАЦИЯ
 // ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // Читаем сохранённые состояния из LocalStorage
     const savedTab = localStorage.getItem('activeTab') || 'workspace';
     const savedFile = localStorage.getItem('activeFile');
 
@@ -28,18 +25,26 @@ document.addEventListener('DOMContentLoaded', () => {
         activeFile = savedFile;
     }
 
-    // Инициализируем модули
     initTabs();
-    
-    // Переключаемся на сохранённую вкладку
     switchTab(savedTab);
-    
     initWebSocket();
     initFileList();
     initTerminal();
     initMonitor();
     initSettings();
     initDocs();
+    
+    // Обработчик кнопки "Сохранить"
+    const btnSave = document.getElementById('btn-save');
+    if (btnSave) {
+        btnSave.addEventListener('click', () => {
+            if (activeFile && editor) {
+                saveFileFromEditor(activeFile);
+            } else {
+                appendLog('️ Выберите файл для сохранения', 'warning');
+            }
+        });
+    }
 });
 
 // ============================================================================
@@ -56,7 +61,6 @@ function initTabs() {
 }
 
 function switchTab(tabId) {
-    // Скрыть все вкладки и деактивировать кнопки
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
@@ -64,17 +68,14 @@ function switchTab(tabId) {
         btn.classList.remove('active');
     });
     
-    // Показать выбранную
     const targetTab = document.getElementById(`tab-${tabId}`);
     const targetBtn = document.querySelector(`[data-tab="${tabId}"]`);
     
     if (targetTab) targetTab.classList.add('active');
     if (targetBtn) targetBtn.classList.add('active');
     
-    // Сохраняем выбор в LocalStorage
     localStorage.setItem('activeTab', tabId);
     
-    // Логика для вкладки Редактора
     if (tabId === 'editor') {
         const container = document.getElementById('editor-container');
         
@@ -85,6 +86,9 @@ function switchTab(tabId) {
         loadCodeMirrorAssets()
             .then(() => {
                 initCodeMirrorEditor();
+                if (editor && activeFile) {
+                    loadFileToEditor(activeFile);
+                }
                 if (editor) {
                     setTimeout(() => editor.refresh(), 100);
                 }
@@ -97,7 +101,7 @@ function switchTab(tabId) {
 }
 
 // ============================================================================
-// ЛЕНИВАЯ ЗАГРУЗКА CODEMIRROR 5 (с темой Monokai)
+// CODEMIRROR
 // ============================================================================
 function loadCodeMirrorAssets() {
     return new Promise((resolve, reject) => {
@@ -117,7 +121,6 @@ function loadCodeMirrorAssets() {
 
         isCodeMirrorLoading = true;
 
-        // Загружаем CSS (базовый + тема Monokai)
         const cssLink = document.createElement('link');
         cssLink.rel = 'stylesheet';
         cssLink.href = '/cm/core.css';
@@ -128,7 +131,6 @@ function loadCodeMirrorAssets() {
         themeLink.href = '/cm/monokai.css';
         document.head.appendChild(themeLink);
 
-        // Загружаем JS файлы
         const scripts = [
             '/cm/core.js',
             '/cm/lua.js',
@@ -173,10 +175,61 @@ function initCodeMirrorEditor() {
         indentUnit: 4,
         tabSize: 4,
         lineWrapping: true,
-        theme: 'monokai'  // Тёмная тема Monokai
+        theme: 'monokai'
     });
 
     editor.setValue('-- Редактор готов к работе!\n-- Выберите файл во вкладке "Рабочая область"\n\nlocal x = 42\nprint("Hello from Lua!")');
+}
+
+function loadFileToEditor(filename) {
+    if (!editor) {
+        appendLog('❌ Редактор не инициализирован', 'error');
+        return;
+    }
+    
+    appendLog(`📥 Загрузка файла: ${filename}`, 'info');
+    
+    fetch(`/api/read-file?filename=${encodeURIComponent(filename)}`)
+        .then(response => {
+            if (!response.ok) throw new Error('File not found');
+            return response.text();
+        })
+        .then(content => {
+            editor.setValue(content);
+            editor.clearHistory();
+            appendLog(`✅ Файл загружен: ${filename}`, 'info');
+        })
+        .catch(error => {
+            appendLog(`❌ Ошибка загрузки: ${error.message}`, 'error');
+        });
+}
+
+function saveFileFromEditor(filename) {
+    if (!editor || !filename) {
+        appendLog('❌ Нет файла для сохранения', 'error');
+        return;
+    }
+    
+    const content = editor.getValue();
+    
+    appendLog(`📤 Сохранение файла: ${filename}`, 'info');
+    
+    fetch(`/api/save-file?filename=${encodeURIComponent(filename)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: content
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            appendLog(`✅ Файл сохранён: ${filename}`, 'info');
+        } else {
+            appendLog(`❌ Ошибка сохранения: ${result.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        appendLog(` Ошибка сети: ${error.message}`, 'error');
+    });
 }
 
 // ============================================================================
@@ -196,7 +249,7 @@ function connectWebSocket() {
     
     ws.onopen = () => {
         console.log('WebSocket connected');
-        document.getElementById('ws-status').textContent = '🟢 Подключено';
+        document.getElementById('ws-status').textContent = ' Подключено';
         document.getElementById('ws-status').classList.add('connected');
         loadFiles();
     };
@@ -214,7 +267,7 @@ function connectWebSocket() {
     
     ws.onclose = () => {
         console.log('WebSocket disconnected');
-        document.getElementById('ws-status').textContent = '🔴 Отключено';
+        document.getElementById('ws-status').textContent = ' Отключено';
         document.getElementById('ws-status').classList.remove('connected');
         
         if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -289,6 +342,12 @@ function renderFileList() {
                 activeFile = file;
                 document.getElementById('active-file-label').textContent = `Файл: ${file}`;
                 localStorage.setItem('activeFile', file);
+                
+                // Автозагрузка в редактор
+                const activeTab = localStorage.getItem('activeTab');
+                if (activeTab === 'editor' && editor) {
+                    loadFileToEditor(file);
+                }
             } else {
                 activeFile = null;
                 document.getElementById('active-file-label').textContent = 'Файл не выбран';
@@ -354,7 +413,7 @@ function confirmDelete(filename) {
             const result = await response.json();
             
             if (response.ok && result.status === 'success') {
-                appendLog(`🗑️ Файл удалён: ${filename}`, 'info');
+                appendLog(`️ Файл удалён: ${filename}`, 'info');
                 
                 if (activeFile === filename) {
                     activeFile = null;
@@ -367,7 +426,7 @@ function confirmDelete(filename) {
                 appendLog(`❌ Ошибка удаления: ${result.message}`, 'error');
             }
         } catch (error) {
-            appendLog(`❌ Ошибка сети при удалении: ${error.message}`, 'error');
+            appendLog(` Ошибка сети при удалении: ${error.message}`, 'error');
         }
     });
 }
@@ -422,7 +481,7 @@ function initTerminal() {
                 appendLog('⚠️ Нет активного скрипта', 'warning');
             }
         } catch (error) {
-            appendLog(`❌ Ошибка остановки: ${error.message}`, 'error');
+            appendLog(` Ошибка остановки: ${error.message}`, 'error');
         }
     });
     
@@ -596,11 +655,4 @@ function showModal(message, onConfirm) {
     document.getElementById('modal-cancel').onclick = () => {
         modal.classList.add('hidden');
     };
-}
-
-// ============================================================================
-// ЗАГЛУШКА ДЛЯ ЗАГРУЗКИ ФАЙЛА В РЕДАКТОР
-// ============================================================================
-function loadFileToEditor(filename) {
-    appendLog(`📝 Загрузка файла ${filename} в редактор (TODO)`, 'info');
 }
