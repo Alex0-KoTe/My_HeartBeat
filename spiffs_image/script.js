@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initMonitor();
     initSettings();
     initDocs();
+    initEditor();
     
     // Обработчик кнопки "Сохранить"
     const btnSave = document.getElementById('btn-save');
@@ -182,6 +183,86 @@ function initCodeMirrorEditor() {
 
     editor.setValue('-- Редактор готов к работе!\n-- Выберите файл во вкладке "Рабочая область"\n\nlocal x = 42\nprint("Hello from Lua!")');
 }
+// ============================================================================
+// РЕДАКТОР: Обработчики кнопок
+// ============================================================================
+function initEditor() {
+    // Кнопка Load - загрузить выбранный файл в редактор
+    const btnLoad = document.getElementById('btn-load');
+    if (btnLoad) {
+        btnLoad.addEventListener('click', () => {
+            if (activeFile && editor) {
+                loadFileToEditor(activeFile);
+            } else {
+                appendLog('⚠️ Выберите файл во вкладке "Рабочая область"', 'warning');
+            }
+        });
+    }
+    
+    // Кнопка Save - сохранить файл
+    const btnSave = document.getElementById('btn-save');
+    if (btnSave) {
+        btnSave.addEventListener('click', () => {
+            if (activeFile && editor) {
+                saveFileFromEditor(activeFile);
+            } else {
+                appendLog('⚠️ Нет файла для сохранения', 'warning');
+            }
+        });
+    }
+    
+    // Кнопка Run - запустить скрипт
+    const btnRun = document.getElementById('btn-editor-run');
+    if (btnRun) {
+        btnRun.addEventListener('click', async () => {
+            if (activeFile) {
+                try {
+                    const response = await fetch(`/api/run?file=${encodeURIComponent(activeFile)}`);
+                    const result = await response.json();
+                    
+                    if (response.ok && result.status === 'success') {
+                        appendLog(`✅ Запуск: ${activeFile}`, 'info');
+                        document.getElementById('editor-status').textContent = 'Выполняется...';
+                    } else {
+                        appendLog(`❌ Ошибка запуска: ${result.message || 'Unknown'}`, 'error');
+                    }
+                } catch (error) {
+                    appendLog(`❌ Ошибка сети: ${error.message}`, 'error');
+                }
+            } else {
+                appendLog('⚠️ Выберите файл', 'warning');
+            }
+        });
+    }
+    
+    // Кнопка Stop - остановить скрипт
+    const btnStop = document.getElementById('btn-editor-stop');
+    if (btnStop) {
+        btnStop.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/stop');
+                const result = await response.json();
+                
+                if (response.ok) {
+                    appendLog('⏹ Скрипт остановлен', 'info');
+                    document.getElementById('editor-status').textContent = 'Готов';
+                } else {
+                    appendLog('⚠️ Нет активного скрипта', 'warning');
+                }
+            } catch (error) {
+                appendLog(`❌ Ошибка остановки: ${error.message}`, 'error');
+            }
+        });
+    }
+    
+    // Кнопка Debug - отладка (заглушка)
+    const btnDebug = document.getElementById('btn-debug-start');
+    if (btnDebug) {
+        btnDebug.addEventListener('click', () => {
+            appendLog('🐞 Отладчик (в разработке)', 'info');
+        });
+    }
+}
 
 function loadFileToEditor(filename) {
     if (!editor) {
@@ -277,19 +358,28 @@ function connectWebSocket() {
             document.getElementById('ws-status').textContent = '🟢 Подключено';
             document.getElementById('ws-status').classList.add('connected');
             loadFiles();
+            startHeartbeat();
         };
         
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                handleWSMessage(data);
-            } catch (e) {
-                console.error(' Ошибка парсинга:', e, 'Данные:', event.data);
-            }
-        };
+       ws.onmessage = (event) => {
+    try {
+        const data = JSON.parse(event.data);
+        
+        // Обрабатываем pong от heartbeat
+        if (data.type === 'pong') {
+            clearTimeout(heartbeatTimeout);
+            return;
+        }
+        
+        handleWSMessage(data);
+    } catch (e) {
+        console.error('❌ Ошибка парсинга:', e, 'Данные:', event.data);
+    }
+};
         
         ws.onclose = () => {
             clearTimeout(connectionTimeout);
+            stopHeartbeat();
             console.log('🔴 WebSocket disconnected');
             document.getElementById('ws-status').textContent = '🔴 Отключено';
             document.getElementById('ws-status').classList.remove('connected');
@@ -329,6 +419,44 @@ function handleWSMessage(data) {
 function sendWS(cmd) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(cmd);
+    }
+}
+// ============================================================================
+// HEARTBEAT: Периодическая проверка соединения
+// ============================================================================
+let heartbeatInterval = null;
+let heartbeatTimeout = null;
+const HEARTBEAT_INTERVAL = 5000; // Проверка каждые 5 секунд
+const HEARTBEAT_TIMEOUT = 10000; // Таймаут ожидания ответа 10 секунд
+
+function startHeartbeat() {
+    stopHeartbeat();
+    
+    heartbeatInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            // Отправляем ping
+            ws.send(JSON.stringify({type: 'ping', timestamp: Date.now()}));
+            
+            // Устанавливаем таймаут на ответ
+            heartbeatTimeout = setTimeout(() => {
+                console.warn('⚠️ Heartbeat timeout - принудительное отключение');
+                if (ws) {
+                    ws.onclose = null; // Отключаем обработчик
+                    ws.close();
+                }
+            }, HEARTBEAT_TIMEOUT);
+        }
+    }, HEARTBEAT_INTERVAL);
+}
+
+function stopHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+    if (heartbeatTimeout) {
+        clearTimeout(heartbeatTimeout);
+        heartbeatTimeout = null;
     }
 }
 

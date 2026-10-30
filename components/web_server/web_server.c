@@ -142,6 +142,20 @@ static esp_err_t ws_handler(httpd_req_t *req) {
     ESP_LOGI(TAG, "WS received (%d bytes): %.*s", ws_pkt.len, ws_pkt.len, buf);
 
     char *cmd = (char *)buf;
+
+     if (strstr(cmd, "\"type\":\"ping\"") != NULL) {
+        // Отправляем pong
+        const char *pong = "{\"type\":\"pong\",\"timestamp\":0}";
+        httpd_ws_frame_t ws_pkt_pong;
+        memset(&ws_pkt_pong, 0, sizeof(httpd_ws_frame_t));
+        ws_pkt_pong.type = HTTPD_WS_TYPE_TEXT;
+        ws_pkt_pong.payload = (uint8_t *)pong;
+        ws_pkt_pong.len = strlen(pong);
+        httpd_ws_send_frame(req, &ws_pkt_pong);
+        ESP_LOGI(TAG, "Sent pong to client %d", fd);
+        free(buf);
+        return ESP_OK;
+    }
     
     if (strncmp(cmd, "run:", 4) == 0) {
         char *filename = cmd + 4;
