@@ -13,6 +13,7 @@ let isCodeMirrorLoaded = false;
 
 let lastLogLength = 0;
 let logPollingInterval = null;
+let reconnectAttempts = 0;
 
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ
@@ -61,6 +62,7 @@ function initTabs() {
 }
 
 function switchTab(tabId) {
+    console.log('🔄 switchTab вызван с tabId:', tabId);
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
@@ -240,43 +242,79 @@ function initWebSocket() {
 }
 
 function connectWebSocket() {
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-        return;
+    // Закрываем старое соединение, если оно есть
+    if (ws) {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            ws.onclose = null; // Отключаем обработчик, чтобы не сработал повторный reconnect
+            ws.close();
+        }
+        ws = null;
     }
     
-    const wsUrl = `ws://${window.location.hostname}/ws`;
-    ws = new WebSocket(wsUrl);
-    
-    ws.onopen = () => {
-        console.log('WebSocket connected');
-        document.getElementById('ws-status').textContent = ' Подключено';
-        document.getElementById('ws-status').classList.add('connected');
-        loadFiles();
-    };
-    
-    ws.onmessage = (event) => {
-        console.log('📩 Получено сообщение:', event.data);
-        try {
-            const data = JSON.parse(event.data);
-            console.log('✅ Распарсено:', data);
-            handleWSMessage(data);
-        } catch (e) {
-            console.error('❌ Ошибка парсинга:', e, 'Данные:', event.data);
-        }
-    };
-    
-    ws.onclose = () => {
-        console.log('WebSocket disconnected');
-        document.getElementById('ws-status').textContent = ' Отключено';
-        document.getElementById('ws-status').classList.remove('connected');
+    // Небольшая задержка перед подключением (даём ESP32 время освободить сокет)
+    setTimeout(() => {
+        const wsUrl = `ws://${window.location.hostname}/ws`;
         
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(connectWebSocket, 3000);
-    };
+        try {
+            ws = new WebSocket(wsUrl);
+        } catch (error) {
+            console.error('Failed to create WebSocket:', error);
+            scheduleReconnect();
+            return;
+        }
+        
+        // Таймаут на подключение (5 секунд)
+        const connectionTimeout = setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+                console.warn('WebSocket connection timeout');
+                ws.close();
+            }
+        }, 5000);
+        
+        ws.onopen = () => {
+            clearTimeout(connectionTimeout);
+            console.log('✅ WebSocket connected');
+            document.getElementById('ws-status').textContent = '🟢 Подключено';
+            document.getElementById('ws-status').classList.add('connected');
+            loadFiles();
+        };
+        
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleWSMessage(data);
+            } catch (e) {
+                console.error(' Ошибка парсинга:', e, 'Данные:', event.data);
+            }
+        };
+        
+        ws.onclose = () => {
+            clearTimeout(connectionTimeout);
+            console.log('🔴 WebSocket disconnected');
+            document.getElementById('ws-status').textContent = '🔴 Отключено';
+            document.getElementById('ws-status').classList.remove('connected');
+            scheduleReconnect();
+        };
+        
+        ws.onerror = (error) => {
+            clearTimeout(connectionTimeout);
+            console.error('WebSocket error:', error);
+            ws.close(); // Закрываем, чтобы сработал onclose
+        };
+    }, 500); // Задержка 500мс перед подключением
+}
+
+function scheduleReconnect() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    // Увеличиваем задержку при каждом неудачном подключении (до 10 секунд)
+    const delay = Math.min(10000, (reconnectAttempts || 0) * 1000 + 3000);
+    reconnectAttempts = (reconnectAttempts || 0) + 1;
     
-    ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-    };
+    console.log(`🔄 Переподключение через ${delay}мс...`);
+    reconnectTimer = setTimeout(() => {
+        reconnectAttempts = 0;
+        connectWebSocket();
+    }, delay);
 }
 
 function handleWSMessage(data) {

@@ -79,13 +79,13 @@ body {
 }
 
 .tab-content {
-    display: none;
+    display: none !important;
     height: 100%;
     flex-direction: column;
 }
 
 .tab-content.active {
-    display: flex;
+    display: flex !important;
 }
 
 /* Вкладка: Рабочая область */
@@ -567,9 +567,9 @@ html, body {
 }
 
 /* 2. Вкладка "Редактор" должна использовать Flexbox и занимать 100% высоты */
-#tab-editor {
+#tab-editor.active {
     height: 100%;
-    display: flex;
+    display: flex !important;
     flex-direction: column;
 }
 
